@@ -8,3 +8,4 @@
 *.tsbuildinfo
 scripts/website-baseline-report.json
 scripts/live-baseline-report.json
+scripts/live-snapshot.json
