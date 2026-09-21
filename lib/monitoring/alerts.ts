@@ -12,6 +12,8 @@ export function describeStatus(status: WebsiteStatus, check: HealthCheck | null)
 
   const sslDays = sslDaysRemaining(check.ssl_expires_at);
 
+  if (check.likely_blocked)
+    return `HTTP ${check.http_status} looks like a WAF/bot-protection block, not a confirmed site error.`;
   if (check.ssl_valid === false) return "SSL certificate is invalid.";
   if (sslDays !== null && sslDays <= 7) return `SSL certificate expires in ${sslDays} day(s).`;
   if (check.response_time_ms !== null && check.response_time_ms > 5000)

@@ -35,7 +35,18 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: checksError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ website, checks });
+  const { data: linkChecks, error: linkChecksError } = await supabase
+    .from("website_link_checks")
+    .select("*")
+    .eq("website_id", params.id)
+    .order("is_broken", { ascending: false })
+    .order("last_checked_at", { ascending: false });
+
+  if (linkChecksError) {
+    return NextResponse.json({ error: linkChecksError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ website, checks, linkChecks });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {

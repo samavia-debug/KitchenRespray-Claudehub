@@ -4,8 +4,8 @@ import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { computeWebsiteStatus, sslDaysRemaining } from "@/lib/monitoring/status";
-import { describeStatus } from "@/lib/monitoring/alerts";
-import type { Website, HealthCheck } from "@/lib/monitoring/types";
+import { getFindings } from "@/lib/monitoring/recommendations";
+import type { Website, HealthCheck, LinkCheck } from "@/lib/monitoring/types";
 import StatusBadge from "../status-badge";
 import NotConnectedCard from "../not-connected-card";
 import RunCheckButton from "./run-check-button";
@@ -13,6 +13,7 @@ import RunCheckButton from "./run-check-button";
 const TABS = [
   "Overview",
   "Website Health",
+  "Broken Links",
   "Performance",
   "Google Analytics",
   "Search Console",
@@ -35,6 +36,7 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
   const supabase = createClient();
   const [website, setWebsite] = useState<Website | null>(null);
   const [checks, setChecks] = useState<HealthCheck[]>([]);
+  const [linkChecks, setLinkChecks] = useState<LinkCheck[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("Overview");
@@ -61,6 +63,7 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
 
     setWebsite(data.website);
     setChecks(data.checks || []);
+    setLinkChecks(data.linkChecks || []);
   }, [supabase, websiteId]);
 
   useEffect(() => {
@@ -115,9 +118,22 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
       {tab === "Overview" && (
         <div className="grid-2">
           <div className="card">
-            <h2>Status</h2>
-            <p style={{ fontSize: "0.9rem" }}>{describeStatus(status, latestCheck)}</p>
-            <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>
+            <h2>Findings &amp; recommended actions</h2>
+            {getFindings(status, latestCheck).map((f, i) => (
+              <div key={i} style={{ marginBottom: i === 0 ? "0" : "0.9rem" }}>
+                <p style={{ fontSize: "0.9rem", margin: "0 0 0.3rem" }}>{f.finding}</p>
+                {f.recommendedActions.length > 0 && (
+                  <ul style={{ margin: 0, paddingLeft: "1.1rem" }}>
+                    {f.recommendedActions.map((a, j) => (
+                      <li key={j} style={{ fontSize: "0.83rem", color: "var(--muted)" }}>
+                        {a}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ))}
+            <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "0.9rem" }}>
               Last checked: {formatDate(latestCheck?.checked_at || null)}
             </p>
             {canManage && <RunCheckButton websiteId={website.id} onChecked={load} />}
@@ -129,6 +145,9 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
               Monitoring interval: every {website.monitoring_interval_minutes} minutes
             </p>
             <p style={{ fontSize: "0.9rem" }}>Active: {website.is_active ? "Yes" : "No"}</p>
+            <p style={{ fontSize: "0.9rem" }}>
+              Broken links: {linkChecks.filter((l) => l.is_broken).length} of {linkChecks.length} checked
+            </p>
           </div>
         </div>
       )}
@@ -161,13 +180,76 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
                     <td>{c.http_status ?? "—"}</td>
                     <td>{c.response_time_ms !== null ? `${c.response_time_ms}ms` : "—"}</td>
                     <td>{c.ssl_valid === null ? "—" : c.ssl_valid ? "Yes" : "No"}</td>
-                    <td style={{ color: "var(--muted)" }}>{c.error_message || "—"}</td>
+                    <td style={{ color: "var(--muted)" }}>
+                      {c.likely_blocked
+                        ? "Likely WAF/bot-protection block"
+                        : c.error_message || "—"}
+                    </td>
                   </tr>
                 ))}
                 {checks.length === 0 && (
                   <tr>
                     <td colSpan={6} style={{ textAlign: "center", color: "var(--muted)" }}>
                       No checks recorded yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {tab === "Broken Links" && (
+        <div className="card">
+          <h2>Broken link scan (homepage)</h2>
+          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+            Checks every link found on the homepage (up to 25), internal and external. Not a
+            full-site crawl — deeper crawling is a later phase.
+          </p>
+          {canManage && (
+            <div style={{ marginBottom: "1rem" }}>
+              <RunCheckButton
+                websiteId={website.id}
+                onChecked={load}
+                action="check-links"
+                label="Check links now"
+                runningLabel="Checking links..."
+              />
+            </div>
+          )}
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Link</th>
+                  <th>Type</th>
+                  <th>Status</th>
+                  <th>First detected</th>
+                  <th>Last checked</th>
+                </tr>
+              </thead>
+              <tbody>
+                {linkChecks.map((l) => (
+                  <tr key={l.id} style={{ cursor: "default" }}>
+                    <td style={{ maxWidth: "360px", overflow: "hidden", textOverflow: "ellipsis" }}>
+                      <a href={l.target_url} target="_blank" rel="noreferrer">
+                        {l.target_url}
+                      </a>
+                    </td>
+                    <td style={{ textTransform: "capitalize" }}>{l.link_type}</td>
+                    <td style={{ color: l.is_broken ? "#b3261e" : undefined, fontWeight: l.is_broken ? 600 : undefined }}>
+                      {l.http_status ?? "No response"}
+                      {l.error_message ? ` — ${l.error_message}` : ""}
+                    </td>
+                    <td>{formatDate(l.first_detected_at)}</td>
+                    <td>{formatDate(l.last_checked_at)}</td>
+                  </tr>
+                ))}
+                {linkChecks.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: "center", color: "var(--muted)" }}>
+                      No link scan recorded yet.
                     </td>
                   </tr>
                 )}
@@ -254,7 +336,10 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
       )}
 
       {tab === "Alerts" && (
-        <NotConnectedCard title="Alerts" phaseNote="the centralized alert system (with assignment & resolution notes) arrives in Phase 7. The Command Centre already surfaces critical/offline status for this site today." />
+        <NotConnectedCard
+          title="Alerts"
+          phaseNote="persisted incidents with assignment & resolution notes, and per-channel notification rules, arrive in a later phase. The Command Centre's Priority Alerts panel already ranks this site's open findings by priority x severity today — see the Overview tab for this site's specific findings and recommended actions."
+        />
       )}
 
       {tab === "Claude Analysis" && (

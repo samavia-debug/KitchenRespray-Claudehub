@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-export type Role = "Admin" | "Manager" | "Staff";
+export type Role = "Admin" | "Manager" | "Staff" | "Viewer";
 
 export type SessionProfile = {
   user: { id: string; email?: string };

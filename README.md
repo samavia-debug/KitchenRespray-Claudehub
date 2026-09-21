@@ -24,18 +24,46 @@ A working dashboard foundation with:
 
 ## Website Monitoring & Analytics module (Phase 1)
 
-Central Website Command Centre for the ~40 company websites, at `/dashboard/monitoring`.
+Central Website Command Centre for the ~60 company websites, at `/dashboard/monitoring`.
 Phase 1 scope: multi-website data model + real HTTP/SSL health checks. Google
 Analytics, Search Console, SEO, leads, WordPress, alerts, and Claude analysis
 are separate later phases (each tab in a site's dashboard says so explicitly).
 
-**Apply the schema** — paste `supabase/migrations/20260919120000_monitoring_schema.sql`
-into the Supabase SQL Editor (or `supabase db push` after `supabase link`).
-It's additive only: new `websites` / `website_health_checks` tables plus two
-read-only views (`website_latest_check`, `website_uptime_7d`). Nothing in the
-existing schema is touched. It also seeds the initial 4-site test group
-(kitchenrespray.com, allsurfacerespray.com, kitchenfacelift.ie,
-tradesprayireland.com) — validate against these before adding the rest.
+See **[ARCHITECTURE.md](./ARCHITECTURE.md)** for the full inspection findings,
+what's built vs. deferred, which features need which credentials, and a real
+baseline health check run against all 60 domains.
+
+**Apply the schema** — in order, paste both of these into the Supabase SQL
+Editor (or `supabase db push` after `supabase link`):
+1. `supabase/migrations/20260919120000_monitoring_schema.sql` — the
+   `websites` / `website_health_checks` tables plus two read-only views
+   (`website_latest_check`, `website_uptime_7d`). Seeds an initial 4-site
+   validation group.
+2. `supabase/migrations/20260921120000_import_60_websites.sql` — imports the
+   full 60-site master inventory (additive, `on conflict do nothing`, safe to
+   re-run). **Read the note at the top of that file first** — it flags a
+   domain spelling discrepancy that needs a human decision before go-live.
+3. `supabase/migrations/20260921140000_priority_alerts_and_links.sql` — adds
+   `likely_blocked` to health checks (WAF/bot-protection detection) and a
+   new `website_link_checks` table for homepage broken-link scanning, both
+   powering the new Priority Alerts panel.
+4. `supabase/migrations/20260921150000_profiles.sql` — creates the
+   `profiles` table (users + roles). This existed only as a hand-made table
+   in the original Supabase project and was never captured in a migration —
+   **a fresh Supabase project needs this one or nothing role-gated in the
+   app works.** Includes first-admin setup instructions in a comment at the
+   bottom of the file.
+
+All four are additive only; nothing in the existing schema is touched.
+
+**Verify domains before monitoring** — `node scripts/verify-websites.mjs`
+runs a one-off, read-only HTTPS+SSL baseline check against all 60 real
+domains (no Supabase credentials needed) and reports which ones don't
+resolve, return errors, or look WordPress-powered. Re-run this after DNS/SSL
+changes to any site.
+
+**Run tests** — `npm test` runs the monitoring-logic unit tests
+(domain normalization, status thresholds).
 
 **New env vars** (see `.env.example`): `SUPABASE_SERVICE_ROLE_KEY`,
 `CANVA_CLIENT_ID`, `CANVA_CLIENT_SECRET` were already required by existing

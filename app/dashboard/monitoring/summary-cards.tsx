@@ -15,6 +15,9 @@ export default function SummaryCards({ websites }: { websites: WebsiteWithHealth
       ? Math.round(responseTimes.reduce((a, b) => a + b, 0) / responseTimes.length)
       : null;
 
+  const brokenLinks = websites.reduce((sum, w) => sum + w.brokenLinkCount, 0);
+  const needsActionNow = websites.filter((w) => w.status === "critical" || w.status === "offline").length;
+
   return (
     <div className="stat-grid">
       <div className="stat-card">
@@ -48,6 +51,18 @@ export default function SummaryCards({ websites }: { websites: WebsiteWithHealth
       <div className="stat-card">
         <div className="stat-value">{avgResponse !== null ? `${avgResponse}ms` : "—"}</div>
         <div className="stat-label">Avg. response time</div>
+      </div>
+      <div className="stat-card">
+        <div className="stat-value" style={{ color: needsActionNow > 0 ? "#b3261e" : undefined }}>
+          {needsActionNow}
+        </div>
+        <div className="stat-label">Needs action now</div>
+      </div>
+      <div className="stat-card">
+        <div className="stat-value" style={{ color: brokenLinks > 0 ? "#b98900" : undefined }}>
+          {brokenLinks}
+        </div>
+        <div className="stat-label">Broken links found</div>
       </div>
     </div>
   );

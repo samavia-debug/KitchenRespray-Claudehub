@@ -23,9 +23,25 @@ export type HealthCheck = {
   ssl_valid: boolean | null;
   ssl_expires_at: string | null;
   error_message: string | null;
+  likely_blocked: boolean;
 };
 
 export type WebsiteStatus = "healthy" | "attention" | "critical" | "offline" | "unknown";
+
+export type LinkType = "internal" | "external";
+
+export type LinkCheck = {
+  id: string;
+  website_id: string;
+  source_url: string;
+  target_url: string;
+  link_type: LinkType;
+  http_status: number | null;
+  is_broken: boolean;
+  error_message: string | null;
+  first_detected_at: string;
+  last_checked_at: string;
+};
 
 /** Everything the command centre / grid needs for one row, assembled client-side. */
 export type WebsiteWithHealth = Website & {
@@ -33,4 +49,5 @@ export type WebsiteWithHealth = Website & {
   uptimePercent7d: number | null;
   checksCount7d: number;
   status: WebsiteStatus;
+  brokenLinkCount: number;
 };

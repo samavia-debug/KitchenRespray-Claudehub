@@ -70,40 +70,56 @@ export default function WebsiteGrid({ websites }: { websites: WebsiteWithHealth[
               <th>Response</th>
               <th>SSL</th>
               <th>Priority</th>
+              <th>Issues</th>
               <th>Last checked</th>
             </tr>
           </thead>
           <tbody>
-            {filtered.map((w) => (
-              <tr key={w.id} onClick={() => router.push(`/dashboard/monitoring/${w.id}`)}>
-                <td>
-                  <strong>{w.name}</strong>
-                  <div style={{ color: "var(--muted)", fontSize: "0.8rem" }}>{w.domain}</div>
-                </td>
-                <td style={{ color: "var(--muted)" }}>{w.category || "—"}</td>
-                <td>
-                  <StatusBadge status={w.status} />
-                </td>
-                <td>{w.uptimePercent7d !== null ? `${w.uptimePercent7d}%` : "—"}</td>
-                <td>
-                  {w.latestCheck?.response_time_ms !== null && w.latestCheck?.response_time_ms !== undefined
-                    ? `${w.latestCheck.response_time_ms}ms`
-                    : "—"}
-                </td>
-                <td>
-                  {w.latestCheck?.ssl_valid === false
-                    ? "Invalid"
-                    : w.latestCheck?.ssl_valid
-                    ? "Valid"
-                    : "—"}
-                </td>
-                <td style={{ textTransform: "capitalize" }}>{w.priority}</td>
-                <td style={{ color: "var(--muted)" }}>{timeAgo(w.latestCheck?.checked_at || null)}</td>
-              </tr>
-            ))}
+            {filtered.map((w) => {
+              const issueCount =
+                (w.status === "critical" || w.status === "attention" || w.status === "offline" ? 1 : 0) +
+                w.brokenLinkCount;
+              return (
+                <tr key={w.id} onClick={() => router.push(`/dashboard/monitoring/${w.id}`)}>
+                  <td>
+                    <strong>{w.name}</strong>
+                    <div style={{ color: "var(--muted)", fontSize: "0.8rem" }}>{w.domain}</div>
+                  </td>
+                  <td style={{ color: "var(--muted)" }}>{w.category || "—"}</td>
+                  <td>
+                    <StatusBadge status={w.status} />
+                  </td>
+                  <td>{w.uptimePercent7d !== null ? `${w.uptimePercent7d}%` : "—"}</td>
+                  <td>
+                    {w.latestCheck?.response_time_ms !== null && w.latestCheck?.response_time_ms !== undefined
+                      ? `${w.latestCheck.response_time_ms}ms`
+                      : "—"}
+                  </td>
+                  <td>
+                    {w.latestCheck?.ssl_valid === false
+                      ? "Invalid"
+                      : w.latestCheck?.ssl_valid
+                      ? "Valid"
+                      : "—"}
+                  </td>
+                  <td style={{ textTransform: "capitalize" }}>{w.priority}</td>
+                  <td>
+                    {issueCount > 0 ? (
+                      <span style={{ color: "#b3261e", fontWeight: 600 }}>
+                        {issueCount}
+                        {w.latestCheck?.likely_blocked ? " · blocked?" : ""}
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--muted)" }}>0</span>
+                    )}
+                  </td>
+                  <td style={{ color: "var(--muted)" }}>{timeAgo(w.latestCheck?.checked_at || null)}</td>
+                </tr>
+              );
+            })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={8} style={{ textAlign: "center", color: "var(--muted)" }}>
+                <td colSpan={9} style={{ textAlign: "center", color: "var(--muted)" }}>
                   No websites match your search.
                 </td>
               </tr>

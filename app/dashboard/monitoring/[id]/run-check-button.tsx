@@ -5,9 +5,15 @@ import { useState } from "react";
 export default function RunCheckButton({
   websiteId,
   onChecked,
+  action = "check",
+  label = "Run check now",
+  runningLabel = "Checking...",
 }: {
   websiteId: string;
   onChecked: () => void;
+  action?: "check" | "check-links";
+  label?: string;
+  runningLabel?: string;
 }) {
   const [running, setRunning] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -17,7 +23,7 @@ export default function RunCheckButton({
     setError(null);
 
     try {
-      const res = await fetch(`/api/monitoring/websites/${websiteId}/check`, { method: "POST" });
+      const res = await fetch(`/api/monitoring/websites/${websiteId}/${action}`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) {
         setError(data.error || "Check failed");
@@ -34,7 +40,7 @@ export default function RunCheckButton({
   return (
     <div>
       <button className="btn-secondary btn" onClick={run} disabled={running}>
-        {running ? "Checking..." : "Run check now"}
+        {running ? runningLabel : label}
       </button>
       {error && <p className="error-text">{error}</p>}
     </div>

@@ -28,11 +28,13 @@ export default function MonitoringCommandCentre() {
       setCanManage(profile?.role === "Admin" || profile?.role === "Manager");
     }
 
-    const [{ data: sites, error: sitesError }, { data: latest }, { data: uptime }] = await Promise.all([
-      supabase.from("websites").select("*").order("name", { ascending: true }),
-      supabase.from("website_latest_check").select("*"),
-      supabase.from("website_uptime_7d").select("*"),
-    ]);
+    const [{ data: sites, error: sitesError }, { data: latest }, { data: uptime }, { data: brokenLinks }] =
+      await Promise.all([
+        supabase.from("websites").select("*").order("name", { ascending: true }),
+        supabase.from("website_latest_check").select("*"),
+        supabase.from("website_uptime_7d").select("*"),
+        supabase.from("website_broken_links_count").select("*"),
+      ]);
 
     if (sitesError) {
       setError(sitesError.message);
@@ -42,6 +44,9 @@ export default function MonitoringCommandCentre() {
     const latestMap = new Map<string, HealthCheck>((latest || []).map((c: any) => [c.website_id, c]));
     const uptimeMap = new Map<string, { uptime_percent: number; checks_count: number }>(
       (uptime || []).map((u: any) => [u.website_id, u])
+    );
+    const brokenLinksMap = new Map<string, number>(
+      (brokenLinks || []).map((b: any) => [b.website_id, b.broken_count])
     );
 
     const merged: WebsiteWithHealth[] = (sites as Website[]).map((w) => {
@@ -53,6 +58,7 @@ export default function MonitoringCommandCentre() {
         uptimePercent7d: uptimeRow ? uptimeRow.uptime_percent : null,
         checksCount7d: uptimeRow ? uptimeRow.checks_count : 0,
         status: computeWebsiteStatus(latestCheck),
+        brokenLinkCount: brokenLinksMap.get(w.id) || 0,
       };
     });
 
