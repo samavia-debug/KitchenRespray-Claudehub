@@ -11,6 +11,9 @@ export type Website = {
   notes: string | null;
   created_at: string;
   updated_at: string;
+  domain_expires_at: string | null;
+  domain_expiry_checked_at: string | null;
+  domain_expiry_unavailable: boolean;
 };
 
 export type HealthCheck = {
@@ -41,6 +44,19 @@ export type LinkCheck = {
   error_message: string | null;
   first_detected_at: string;
   last_checked_at: string;
+};
+
+export type SeoCheck = {
+  website_id: string;
+  title: string | null;
+  meta_description: string | null;
+  canonical_url: string | null;
+  has_noindex: boolean;
+  robots_txt_status: "found" | "missing" | "error";
+  robots_disallows_all: boolean;
+  sitemap_status: "found" | "missing" | "error";
+  sitemap_in_robots: boolean;
+  checked_at: string;
 };
 
 /** Everything the command centre / grid needs for one row, assembled client-side. */

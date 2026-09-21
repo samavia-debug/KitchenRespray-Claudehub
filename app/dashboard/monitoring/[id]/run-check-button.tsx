@@ -11,7 +11,7 @@ export default function RunCheckButton({
 }: {
   websiteId: string;
   onChecked: () => void;
-  action?: "check" | "check-links";
+  action?: "check" | "check-links" | "check-seo" | "check-domain";
   label?: string;
   runningLabel?: string;
 }) {

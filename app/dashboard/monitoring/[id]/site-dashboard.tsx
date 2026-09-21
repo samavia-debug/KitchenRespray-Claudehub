@@ -5,7 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { computeWebsiteStatus, sslDaysRemaining } from "@/lib/monitoring/status";
 import { getFindings } from "@/lib/monitoring/recommendations";
-import type { Website, HealthCheck, LinkCheck } from "@/lib/monitoring/types";
+import type { Website, HealthCheck, LinkCheck, SeoCheck } from "@/lib/monitoring/types";
 import StatusBadge from "../status-badge";
 import NotConnectedCard from "../not-connected-card";
 import ResponseTimeChart from "../response-time-chart";
@@ -44,6 +44,7 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
   const [website, setWebsite] = useState<Website | null>(null);
   const [checks, setChecks] = useState<HealthCheck[]>([]);
   const [linkChecks, setLinkChecks] = useState<LinkCheck[]>([]);
+  const [seoCheck, setSeoCheck] = useState<SeoCheck | null>(null);
   const [canManage, setCanManage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("Overview");
@@ -72,6 +73,7 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
     setWebsite(data.website);
     setChecks(data.checks || []);
     setLinkChecks(data.linkChecks || []);
+    setSeoCheck(data.seoCheck || null);
   }, [supabase, websiteId]);
 
   useEffect(() => {
@@ -333,7 +335,61 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
       )}
 
       {tab === "SEO" && (
-        <NotConnectedCard title="SEO" phaseNote="arrives in Phase 5 (SEO provider integration layer)." />
+        <div className="card">
+          <h2>Technical SEO spot-check</h2>
+          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+            Homepage + robots.txt + sitemap.xml only — a technical spot-check, not a full crawl
+            or a replacement for Google Search Console (arrives separately once connected).
+          </p>
+          {canManage && (
+            <div style={{ marginBottom: "1rem" }}>
+              <RunCheckButton
+                websiteId={website.id}
+                onChecked={load}
+                action="check-seo"
+                label="Check SEO now"
+                runningLabel="Checking..."
+              />
+            </div>
+          )}
+          {seoCheck ? (
+            <div className="grid-2">
+              <div>
+                <p style={{ fontSize: "0.9rem" }}>
+                  <strong>Title:</strong> {seoCheck.title || <span style={{ color: "var(--muted)" }}>Not found</span>}
+                </p>
+                <p style={{ fontSize: "0.9rem" }}>
+                  <strong>Meta description:</strong>{" "}
+                  {seoCheck.meta_description || <span style={{ color: "var(--muted)" }}>Not found</span>}
+                </p>
+                <p style={{ fontSize: "0.9rem" }}>
+                  <strong>Canonical URL:</strong>{" "}
+                  {seoCheck.canonical_url || <span style={{ color: "var(--muted)" }}>Not found</span>}
+                </p>
+                <p style={{ fontSize: "0.9rem", color: seoCheck.has_noindex ? "#b3261e" : undefined, fontWeight: seoCheck.has_noindex ? 600 : undefined }}>
+                  <strong>Noindex:</strong> {seoCheck.has_noindex ? "Yes — this page is telling search engines not to index it" : "No"}
+                </p>
+              </div>
+              <div>
+                <p style={{ fontSize: "0.9rem", color: seoCheck.robots_txt_status !== "found" ? "#b98900" : undefined }}>
+                  <strong>robots.txt:</strong> {seoCheck.robots_txt_status}
+                  {seoCheck.robots_disallows_all && " — disallows all crawlers (Disallow: /)"}
+                </p>
+                <p style={{ fontSize: "0.9rem", color: seoCheck.sitemap_status !== "found" ? "#b98900" : undefined }}>
+                  <strong>sitemap.xml:</strong> {seoCheck.sitemap_status}
+                </p>
+                <p style={{ fontSize: "0.9rem" }}>
+                  <strong>Sitemap referenced in robots.txt:</strong> {seoCheck.sitemap_in_robots ? "Yes" : "No"}
+                </p>
+                <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "1rem" }}>
+                  Last checked: {formatDate(seoCheck.checked_at)}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p style={{ color: "var(--muted)" }}>No SEO check recorded yet.</p>
+          )}
+        </div>
       )}
 
       {tab === "Leads & Conversions" && (
@@ -354,13 +410,46 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
                 SSL expires: {formatDate(latestCheck.ssl_expires_at)}
                 {sslDays !== null ? ` (${sslDays} day${sslDays === 1 ? "" : "s"} remaining)` : ""}
               </p>
-              <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "1rem" }}>
-                Domain expiry tracking requires a connected registrar/WHOIS provider — not yet
-                connected.
-              </p>
             </>
           ) : (
             <p style={{ color: "var(--muted)" }}>No checks recorded yet.</p>
+          )}
+
+          <h2 style={{ marginTop: "1.5rem" }}>Domain expiry</h2>
+          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+            Looked up via RDAP (free, no account needed) — not every registry publishes this data,
+            particularly some ccTLDs, so "not available" is an expected outcome for some domains,
+            not an error.
+          </p>
+          {canManage && (
+            <div style={{ marginBottom: "1rem" }}>
+              <RunCheckButton
+                websiteId={website.id}
+                onChecked={load}
+                action="check-domain"
+                label="Check domain expiry now"
+                runningLabel="Checking..."
+              />
+            </div>
+          )}
+          {website.domain_expiry_checked_at ? (
+            website.domain_expiry_unavailable ? (
+              <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
+                Not available for this domain's registry.
+              </p>
+            ) : (
+              <p style={{ fontSize: "0.9rem" }}>
+                Domain expires: {formatDate(website.domain_expires_at)}
+                {(() => {
+                  const days = website.domain_expires_at
+                    ? Math.floor((new Date(website.domain_expires_at).getTime() - Date.now()) / 86_400_000)
+                    : null;
+                  return days !== null ? ` (${days} day${days === 1 ? "" : "s"} remaining)` : "";
+                })()}
+              </p>
+            )
+          ) : (
+            <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>Not checked yet.</p>
           )}
         </div>
       )}
