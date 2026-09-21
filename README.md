@@ -70,11 +70,23 @@ changes to any site.
 code but missing from this file — add them now if they aren't already set in
 Vercel. `CRON_SECRET` is new, required for scheduled health checks.
 
-**Scheduled checks** — `vercel.json` registers a cron hitting
-`/api/monitoring/cron` every 30 minutes. It only checks sites whose own
+**Scheduled checks** — `/api/monitoring/cron` only checks sites whose own
 `monitoring_interval_minutes` has actually elapsed, in batches of 5, so it
 never hammers client sites. Admin/Manager users can also trigger an immediate
-check per site from that site's dashboard ("Run check now").
+check per site ("Run check now") or all sites at once ("Check all now" on
+the Command Centre).
+
+On **Vercel Hobby (free)**, native Cron Jobs are hard-capped to once/day —
+declaring anything more frequent in `vercel.json` makes the *entire deploy
+fail*, not just get throttled. `vercel.json` here declares a once-daily
+cron (`0 6 * * *`) as a free fallback safety net, but the real monitoring
+cadence comes from an **external scheduler** hitting the same endpoint —
+e.g. [cron-job.org](https://cron-job.org) (free) calling
+`POST https://<your-deployment>/api/monitoring/cron` with header
+`Authorization: Bearer <CRON_SECRET>` every 30 minutes. This works
+regardless of hosting plan since it's just a normal authenticated API call,
+not Vercel's native Cron feature. Upgrading to Vercel Pro removes the
+need for this — `vercel.json` can go back to `*/30 * * * *` at that point.
 
 **Adding more sites** — no schema or code changes needed. Admin/Manager users
 add a website from the Command Centre UI, or insert directly into the
