@@ -8,7 +8,14 @@ import { getFindings } from "@/lib/monitoring/recommendations";
 import type { Website, HealthCheck, LinkCheck } from "@/lib/monitoring/types";
 import StatusBadge from "../status-badge";
 import NotConnectedCard from "../not-connected-card";
+import ResponseTimeChart from "../response-time-chart";
 import RunCheckButton from "./run-check-button";
+
+const RANGES = [
+  { label: "24 hours", hours: 24 },
+  { label: "7 days", hours: 24 * 7 },
+  { label: "30 days", hours: 24 * 30 },
+] as const;
 
 const TABS = [
   "Overview",
@@ -40,6 +47,7 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
   const [canManage, setCanManage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("Overview");
+  const [rangeHours, setRangeHours] = useState<number>(RANGES[1].hours);
 
   const load = useCallback(async () => {
     setError(null);
@@ -88,6 +96,8 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
   const latestCheck = checks[0] || null;
   const status = computeWebsiteStatus(latestCheck);
   const sslDays = sslDaysRemaining(latestCheck?.ssl_expires_at || null);
+  const rangeCutoff = Date.now() - rangeHours * 60 * 60 * 1000;
+  const checksInRange = checks.filter((c) => new Date(c.checked_at).getTime() >= rangeCutoff);
 
   return (
     <>
@@ -148,6 +158,10 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
             <p style={{ fontSize: "0.9rem" }}>
               Broken links: {linkChecks.filter((l) => l.is_broken).length} of {linkChecks.length} checked
             </p>
+          </div>
+          <div className="card" style={{ gridColumn: "1 / -1" }}>
+            <h2>Response time — last 7 days</h2>
+            <ResponseTimeChart checks={checks.filter((c) => new Date(c.checked_at).getTime() >= Date.now() - 7 * 86_400_000)} height={110} />
           </div>
         </div>
       )}
@@ -261,12 +275,28 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
 
       {tab === "Performance" && (
         <div className="card">
-          <h2>Response time history</h2>
-          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
-            Trailing {checks.length} checks. Core Web Vitals arrive with a dedicated performance
-            provider in a later phase.
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "0.75rem" }}>
+            <h2 style={{ margin: 0 }}>Response time history</h2>
+            <div style={{ display: "flex", gap: "0.4rem" }}>
+              {RANGES.map((r) => (
+                <button
+                  key={r.hours}
+                  className={rangeHours === r.hours ? "btn" : "btn-secondary btn"}
+                  style={{ padding: "0.35rem 0.75rem", fontSize: "0.8rem" }}
+                  onClick={() => setRangeHours(r.hours)}
+                >
+                  {r.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: "0.5rem 0 1rem" }}>
+            {checksInRange.length} check{checksInRange.length === 1 ? "" : "s"} in this range (of the last {checks.length}
+            {checks.length === 100 ? "+" : ""} stored). Core Web Vitals arrive with a dedicated performance provider in a
+            later phase.
           </p>
-          <div className="table-wrap">
+          <ResponseTimeChart checks={checksInRange} height={180} />
+          <div className="table-wrap" style={{ marginTop: "1.25rem" }}>
             <table className="data-table">
               <thead>
                 <tr>
@@ -275,16 +305,16 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
                 </tr>
               </thead>
               <tbody>
-                {checks.map((c) => (
+                {checksInRange.map((c) => (
                   <tr key={c.id} style={{ cursor: "default" }}>
                     <td>{formatDate(c.checked_at)}</td>
                     <td>{c.response_time_ms !== null ? `${c.response_time_ms}ms` : "—"}</td>
                   </tr>
                 ))}
-                {checks.length === 0 && (
+                {checksInRange.length === 0 && (
                   <tr>
                     <td colSpan={2} style={{ textAlign: "center", color: "var(--muted)" }}>
-                      No data yet.
+                      No data in this range.
                     </td>
                   </tr>
                 )}

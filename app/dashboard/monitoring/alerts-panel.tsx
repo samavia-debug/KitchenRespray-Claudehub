@@ -1,14 +1,31 @@
 import Link from "next/link";
 import type { WebsiteWithHealth } from "@/lib/monitoring/types";
 import { getFindings, priorityScore } from "@/lib/monitoring/recommendations";
+import CheckAllButton from "./check-all-button";
 
 /**
  * "Needs action now" — every site with a real finding (not just critical/
  * offline: attention-level findings like a near-expiry SSL or a likely WAF
  * block belong here too), ranked by site priority x status severity so the
  * top of the list is always what to look at first.
+ *
+ * Unchecked ("unknown") sites are deliberately NOT silently dropped: a
+ * dashboard with 60 unchecked sites and an empty alerts panel reads as
+ * "everything's fine", which is the one thing it is not — spec's own rule
+ * (never classify unknown as healthy) applies to this panel too. They get
+ * their own rollup instead of 60 duplicate "run a check" line items.
  */
-export default function AlertsPanel({ websites }: { websites: WebsiteWithHealth[] }) {
+export default function AlertsPanel({
+  websites,
+  canManage,
+  onChecked,
+}: {
+  websites: WebsiteWithHealth[];
+  canManage: boolean;
+  onChecked: () => void;
+}) {
+  const unchecked = websites.filter((w) => w.status === "unknown");
+
   const ranked = websites
     .filter((w) => w.status !== "healthy" && w.status !== "unknown")
     .map((w) => ({ website: w, findings: getFindings(w.status, w.latestCheck), score: priorityScore(w.priority, w.status) }))
@@ -16,10 +33,40 @@ export default function AlertsPanel({ websites }: { websites: WebsiteWithHealth[
 
   const withBrokenLinks = websites.filter((w) => w.brokenLinkCount > 0);
 
+  const nothingToShow = ranked.length === 0 && withBrokenLinks.length === 0 && unchecked.length === 0;
+
   return (
     <div className="card">
       <h2>Priority alerts — needs action now</h2>
-      {ranked.length === 0 && withBrokenLinks.length === 0 ? (
+
+      {unchecked.length > 0 && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            gap: "1rem",
+            flexWrap: "wrap",
+            padding: "0.75rem 0.9rem",
+            marginBottom: ranked.length > 0 || withBrokenLinks.length > 0 ? "0.9rem" : 0,
+            background: "var(--accent-soft)",
+            border: "1px solid var(--accent)",
+            borderRadius: "10px",
+          }}
+        >
+          <div>
+            <strong style={{ fontSize: "0.9rem" }}>
+              {unchecked.length} of {websites.length} website{unchecked.length === 1 ? "" : "s"} {unchecked.length === 1 ? "hasn't" : "haven't"} been checked yet
+            </strong>
+            <p style={{ margin: "0.2rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
+              No data means no status can be shown for {unchecked.length === 1 ? "it" : "them"} — this is not the same as healthy.
+            </p>
+          </div>
+          {canManage && <CheckAllButton onChecked={onChecked} label="Check all now" />}
+        </div>
+      )}
+
+      {nothingToShow ? (
         <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
           No open issues across your monitored websites.
         </p>

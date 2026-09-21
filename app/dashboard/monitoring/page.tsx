@@ -107,7 +107,7 @@ export default function MonitoringCommandCentre() {
         <NotConnectedCard title="Organic traffic trend" phaseNote="arrives with Google Search Console (Phase 4)." />
       </div>
 
-      <AlertsPanel websites={websites} />
+      <AlertsPanel websites={websites} canManage={canManage} onChecked={load} />
 
       {canManage && <AddWebsiteForm onAdded={load} />}
 
