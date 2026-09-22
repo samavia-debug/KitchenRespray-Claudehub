@@ -66,7 +66,17 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: vitalsCheckError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ website, checks, linkChecks, seoCheck, vitalsCheck });
+  const { data: wordpressCheck, error: wordpressCheckError } = await supabase
+    .from("website_wordpress_checks")
+    .select("*")
+    .eq("website_id", params.id)
+    .maybeSingle();
+
+  if (wordpressCheckError) {
+    return NextResponse.json({ error: wordpressCheckError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ website, checks, linkChecks, seoCheck, vitalsCheck, wordpressCheck });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {

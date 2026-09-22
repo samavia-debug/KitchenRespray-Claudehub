@@ -2,6 +2,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { checkWebsiteHealth, checkBrokenLinks } from "./checker";
 import { checkSeo, checkDomainExpiry } from "./seo";
 import { checkCoreWebVitals } from "./vitals";
+import { checkWordPress } from "./wordpress";
 import { computeWebsiteStatus } from "./status";
 import { decideIncidentAction, formatDuration } from "./incidents";
 import { notifySlack, formatIncidentOpenedMessage, formatIncidentResolvedMessage } from "./notify";
@@ -211,6 +212,32 @@ export async function runAndRecordVitalsCheck(websiteId: string, domain: string)
     .single();
 
   if (error) throw new Error(`Failed to record Core Web Vitals check: ${error.message}`);
+
+  return data;
+}
+
+/** Runs the passive WordPress fingerprint check and upserts the result. */
+export async function runAndRecordWordPressCheck(websiteId: string, domain: string) {
+  const result = await checkWordPress(domain);
+  const service = createServiceClient();
+
+  const { data, error } = await service
+    .from("website_wordpress_checks")
+    .upsert(
+      {
+        website_id: websiteId,
+        is_wordpress: result.isWordPress,
+        core_version: result.coreVersion,
+        theme_slug: result.themeSlug,
+        plugins: result.plugins,
+        checked_at: new Date().toISOString(),
+      },
+      { onConflict: "website_id" }
+    )
+    .select()
+    .single();
+
+  if (error) throw new Error(`Failed to record WordPress check: ${error.message}`);
 
   return data;
 }

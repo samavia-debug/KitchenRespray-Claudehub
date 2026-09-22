@@ -8,7 +8,7 @@ import { computeWebsiteStatus, sslDaysRemaining } from "@/lib/monitoring/status"
 import { getFindings } from "@/lib/monitoring/recommendations";
 import { formatDuration } from "@/lib/monitoring/incidents";
 import { rateCls, rateLcp, rateTbt } from "@/lib/monitoring/vitals";
-import type { Website, HealthCheck, LinkCheck, SeoCheck, Incident, CoreWebVitalsCheck } from "@/lib/monitoring/types";
+import type { Website, HealthCheck, LinkCheck, SeoCheck, Incident, CoreWebVitalsCheck, WordPressCheck } from "@/lib/monitoring/types";
 import StatusBadge from "../status-badge";
 import NotConnectedCard from "../not-connected-card";
 import ResponseTimeChart from "../response-time-chart";
@@ -96,6 +96,7 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
   const [linkChecks, setLinkChecks] = useState<LinkCheck[]>([]);
   const [seoCheck, setSeoCheck] = useState<SeoCheck | null>(null);
   const [vitalsCheck, setVitalsCheck] = useState<CoreWebVitalsCheck | null>(null);
+  const [wordpressCheck, setWordpressCheck] = useState<WordPressCheck | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,6 +128,7 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
     setLinkChecks(data.linkChecks || []);
     setSeoCheck(data.seoCheck || null);
     setVitalsCheck(data.vitalsCheck || null);
+    setWordpressCheck(data.wordpressCheck || null);
 
     const { data: incidentRows } = await supabase
       .from("incidents")
@@ -517,7 +519,80 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
       )}
 
       {tab === "WordPress" && (
-        <NotConnectedCard title="WordPress" phaseNote="arrives once read-only WordPress credentials are connected for this site." />
+        <div className="card">
+          <h2>WordPress fingerprint</h2>
+          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+            Passive detection from the public homepage source only — no WordPress admin
+            credentials used or required. Real limits: a site that hides its version (common
+            security-plugin behavior) or rewrites asset version strings (common caching-plugin
+            behavior) can show an inaccurate or missing version; plugins with no front-end assets
+            are invisible to this method; PHP version and true plugin-failure detection need real
+            server access this can't provide.
+          </p>
+          {canManage && (
+            <div style={{ marginBottom: "1rem" }}>
+              <RunCheckButton
+                websiteId={website.id}
+                onChecked={load}
+                action="check-wordpress"
+                label="Check WordPress now"
+                runningLabel="Checking..."
+              />
+            </div>
+          )}
+          {wordpressCheck ? (
+            wordpressCheck.is_wordpress ? (
+              <>
+                <p style={{ fontSize: "0.9rem" }}>
+                  <strong>Core version:</strong> {wordpressCheck.core_version || <span style={{ color: "var(--muted)" }}>Not visible in page source</span>}
+                </p>
+                <p style={{ fontSize: "0.9rem" }}>
+                  <strong>Theme:</strong> {wordpressCheck.theme_slug || <span style={{ color: "var(--muted)" }}>Not detected</span>}
+                </p>
+                <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: "0.5rem 0 1rem" }}>
+                  Last checked: {formatDate(wordpressCheck.checked_at)}
+                </p>
+                <h3 style={{ fontSize: "0.9rem", margin: "0 0 0.5rem" }}>
+                  Plugins detected ({wordpressCheck.plugins.length})
+                </h3>
+                {wordpressCheck.plugins.length > 0 ? (
+                  <div className="table-wrap">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Plugin</th>
+                          <th>Detected version</th>
+                          <th>Latest on WordPress.org</th>
+                          <th>Status</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {wordpressCheck.plugins.map((p) => (
+                          <tr key={p.slug} style={{ cursor: "default" }}>
+                            <td>{p.slug}</td>
+                            <td>{p.version || "—"}</td>
+                            <td>{p.latestVersion || "—"}</td>
+                            <td style={{ color: p.isOutdated ? "#b3261e" : undefined, fontWeight: p.isOutdated ? 600 : undefined }}>
+                              {p.isOutdated === null ? "Unknown" : p.isOutdated ? "Outdated" : "Up to date"}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <p style={{ color: "var(--muted)", fontSize: "0.9rem" }}>
+                    No plugins with detectable front-end assets found.
+                  </p>
+                )}
+              </>
+            ) : (
+              <p style={{ color: "var(--muted)" }}>This site does not appear to run WordPress.</p>
+            )
+          ) : (
+            <p style={{ color: "var(--muted)" }}>No WordPress check recorded yet.</p>
+          )}
+        </div>
       )}
 
       {tab === "SSL & Domain" && (

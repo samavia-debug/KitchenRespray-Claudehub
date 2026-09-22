@@ -69,6 +69,22 @@ export type CoreWebVitalsCheck = {
   checked_at: string;
 };
 
+export type WordPressPluginInfo = {
+  slug: string;
+  version: string | null;
+  latestVersion: string | null;
+  isOutdated: boolean | null;
+};
+
+export type WordPressCheck = {
+  website_id: string;
+  is_wordpress: boolean;
+  core_version: string | null;
+  theme_slug: string | null;
+  plugins: WordPressPluginInfo[];
+  checked_at: string;
+};
+
 export type GoogleService = "analytics" | "search_console";
 
 export type GoogleConnection = {
