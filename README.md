@@ -91,3 +91,11 @@ need for this — `vercel.json` can go back to `*/30 * * * *` at that point.
 **Adding more sites** — no schema or code changes needed. Admin/Manager users
 add a website from the Command Centre UI, or insert directly into the
 `websites` table. Designed to scale to 100+ rows without redesign.
+
+**Incidents & Slack notifications** — every check syncs an `incidents` row
+(one per continuous critical/offline spell, not one per check — see
+`lib/monitoring/incidents.ts`). Set `SLACK_WEBHOOK_URL` (Slack → Apps →
+Incoming Webhooks → Add to Slack → pick a channel → copy the URL) to get
+notified when an incident opens and when it resolves. Optional — checks
+still run and incidents still get recorded without it, notifications are
+just silently skipped.

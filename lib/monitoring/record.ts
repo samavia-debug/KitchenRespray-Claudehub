@@ -2,7 +2,8 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { checkWebsiteHealth, checkBrokenLinks } from "./checker";
 import { checkSeo, checkDomainExpiry } from "./seo";
 import { computeWebsiteStatus } from "./status";
-import { decideIncidentAction } from "./incidents";
+import { decideIncidentAction, formatDuration } from "./incidents";
+import { notifySlack, formatIncidentOpenedMessage, formatIncidentResolvedMessage } from "./notify";
 import type { HealthCheck } from "./types";
 
 /** Runs a health probe for one website and persists the result. Service-role write. */
@@ -27,7 +28,7 @@ export async function runAndRecordCheck(websiteId: string, domain: string) {
 
   if (error) throw new Error(`Failed to record health check: ${error.message}`);
 
-  await syncIncidentState(service, websiteId, data as HealthCheck);
+  await syncIncidentState(service, websiteId, domain, data as HealthCheck);
 
   return data;
 }
@@ -35,13 +36,16 @@ export async function runAndRecordCheck(websiteId: string, domain: string) {
 /**
  * Opens, continues, or resolves this website's incident record based on
  * the status just computed from the new check — see decideIncidentAction
- * for the actual open/continue/resolve rules. Never lets a health-check
+ * for the actual open/continue/resolve rules — and sends the corresponding
+ * Slack notification on open/resolve only (never on "continue", which is
+ * exactly the dedup this table exists for). Never lets a health-check
  * failure here block the check itself from being recorded; a failure to
- * sync incident state is logged, not thrown.
+ * sync incident state or notify is logged, not thrown.
  */
 async function syncIncidentState(
   service: ReturnType<typeof createServiceClient>,
   websiteId: string,
+  domain: string,
   check: HealthCheck
 ) {
   try {
@@ -49,7 +53,7 @@ async function syncIncidentState(
 
     const { data: openIncident } = await service
       .from("incidents")
-      .select("id, detection_count")
+      .select("id, started_at, detection_count")
       .eq("website_id", websiteId)
       .is("resolved_at", null)
       .maybeSingle();
@@ -64,6 +68,9 @@ async function syncIncidentState(
         last_seen_at: check.checked_at,
         detection_count: 1,
       });
+
+      const { data: website } = await service.from("websites").select("name").eq("id", websiteId).single();
+      await notifySlack(formatIncidentOpenedMessage(website?.name || domain, domain, action.severity));
     } else if (action.type === "continue" && openIncident) {
       await service
         .from("incidents")
@@ -71,6 +78,10 @@ async function syncIncidentState(
         .eq("id", openIncident.id);
     } else if (action.type === "resolve" && openIncident) {
       await service.from("incidents").update({ resolved_at: check.checked_at }).eq("id", openIncident.id);
+
+      const { data: website } = await service.from("websites").select("name").eq("id", websiteId).single();
+      const duration = formatDuration(openIncident.started_at, check.checked_at);
+      await notifySlack(formatIncidentResolvedMessage(website?.name || domain, domain, duration));
     }
   } catch (err) {
     console.error(`Failed to sync incident state for website ${websiteId}:`, err);
