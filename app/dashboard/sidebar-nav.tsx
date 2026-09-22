@@ -46,6 +46,7 @@ export default function SidebarNav() {
   const liveLinks = [
     { href: "/dashboard", label: "Overview" },
     { href: "/dashboard/monitoring", label: "Monitoring" },
+    { href: "/dashboard/incidents", label: "Incidents" },
     { href: "/dashboard/claude-design", label: "Claude Design" },
     ...(isManagerOrAbove
       ? [{ href: "/dashboard/knowledge", label: "Company Knowledge" }]

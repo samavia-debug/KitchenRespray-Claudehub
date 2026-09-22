@@ -1,6 +1,9 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import { checkWebsiteHealth, checkBrokenLinks } from "./checker";
 import { checkSeo, checkDomainExpiry } from "./seo";
+import { computeWebsiteStatus } from "./status";
+import { decideIncidentAction } from "./incidents";
+import type { HealthCheck } from "./types";
 
 /** Runs a health probe for one website and persists the result. Service-role write. */
 export async function runAndRecordCheck(websiteId: string, domain: string) {
@@ -24,7 +27,54 @@ export async function runAndRecordCheck(websiteId: string, domain: string) {
 
   if (error) throw new Error(`Failed to record health check: ${error.message}`);
 
+  await syncIncidentState(service, websiteId, data as HealthCheck);
+
   return data;
+}
+
+/**
+ * Opens, continues, or resolves this website's incident record based on
+ * the status just computed from the new check — see decideIncidentAction
+ * for the actual open/continue/resolve rules. Never lets a health-check
+ * failure here block the check itself from being recorded; a failure to
+ * sync incident state is logged, not thrown.
+ */
+async function syncIncidentState(
+  service: ReturnType<typeof createServiceClient>,
+  websiteId: string,
+  check: HealthCheck
+) {
+  try {
+    const status = computeWebsiteStatus(check);
+
+    const { data: openIncident } = await service
+      .from("incidents")
+      .select("id, detection_count")
+      .eq("website_id", websiteId)
+      .is("resolved_at", null)
+      .maybeSingle();
+
+    const action = decideIncidentAction(status, !!openIncident);
+
+    if (action.type === "open") {
+      await service.from("incidents").insert({
+        website_id: websiteId,
+        severity: action.severity,
+        started_at: check.checked_at,
+        last_seen_at: check.checked_at,
+        detection_count: 1,
+      });
+    } else if (action.type === "continue" && openIncident) {
+      await service
+        .from("incidents")
+        .update({ last_seen_at: check.checked_at, detection_count: openIncident.detection_count + 1 })
+        .eq("id", openIncident.id);
+    } else if (action.type === "resolve" && openIncident) {
+      await service.from("incidents").update({ resolved_at: check.checked_at }).eq("id", openIncident.id);
+    }
+  } catch (err) {
+    console.error(`Failed to sync incident state for website ${websiteId}:`, err);
+  }
 }
 
 /**

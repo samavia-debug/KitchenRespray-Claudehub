@@ -5,7 +5,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { computeWebsiteStatus, sslDaysRemaining } from "@/lib/monitoring/status";
 import { getFindings } from "@/lib/monitoring/recommendations";
-import type { Website, HealthCheck, LinkCheck, SeoCheck } from "@/lib/monitoring/types";
+import { formatDuration } from "@/lib/monitoring/incidents";
+import type { Website, HealthCheck, LinkCheck, SeoCheck, Incident } from "@/lib/monitoring/types";
 import StatusBadge from "../status-badge";
 import NotConnectedCard from "../not-connected-card";
 import ResponseTimeChart from "../response-time-chart";
@@ -45,6 +46,7 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
   const [checks, setChecks] = useState<HealthCheck[]>([]);
   const [linkChecks, setLinkChecks] = useState<LinkCheck[]>([]);
   const [seoCheck, setSeoCheck] = useState<SeoCheck | null>(null);
+  const [incidents, setIncidents] = useState<Incident[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("Overview");
@@ -74,6 +76,14 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
     setChecks(data.checks || []);
     setLinkChecks(data.linkChecks || []);
     setSeoCheck(data.seoCheck || null);
+
+    const { data: incidentRows } = await supabase
+      .from("incidents")
+      .select("*")
+      .eq("website_id", websiteId)
+      .order("started_at", { ascending: false })
+      .limit(50);
+    setIncidents(incidentRows || []);
   }, [supabase, websiteId]);
 
   useEffect(() => {
@@ -455,10 +465,52 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
       )}
 
       {tab === "Alerts" && (
-        <NotConnectedCard
-          title="Alerts"
-          phaseNote="persisted incidents with assignment & resolution notes, and per-channel notification rules, arrive in a later phase. The Command Centre's Priority Alerts panel already ranks this site's open findings by priority x severity today — see the Overview tab for this site's specific findings and recommended actions."
-        />
+        <div className="card">
+          <h2>Incident history</h2>
+          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+            Per-channel notification rules (Slack/email/Teams) and manual assignment arrive in a
+            later phase — this is the real incident timeline for this site today.
+          </p>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Severity</th>
+                  <th>Started</th>
+                  <th>Status</th>
+                  <th>Duration</th>
+                  <th>Checks confirming</th>
+                </tr>
+              </thead>
+              <tbody>
+                {incidents.map((i) => (
+                  <tr key={i.id} style={{ cursor: "default" }}>
+                    <td style={{ textTransform: "capitalize", color: i.severity === "offline" ? "#6f6a63" : "#b3261e", fontWeight: 600 }}>
+                      {i.severity}
+                    </td>
+                    <td>{formatDate(i.started_at)}</td>
+                    <td>
+                      {i.resolved_at ? (
+                        <span style={{ color: "#2e7d32", fontWeight: 600 }}>Resolved {formatDate(i.resolved_at)}</span>
+                      ) : (
+                        <span style={{ color: "#b3261e", fontWeight: 600 }}>Still open</span>
+                      )}
+                    </td>
+                    <td>{formatDuration(i.started_at, i.resolved_at)}</td>
+                    <td>{i.detection_count}</td>
+                  </tr>
+                ))}
+                {incidents.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ textAlign: "center", color: "var(--muted)" }}>
+                      No incidents recorded for this site yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
       )}
 
       {tab === "Claude Analysis" && (

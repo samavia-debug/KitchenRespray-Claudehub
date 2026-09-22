@@ -59,6 +59,19 @@ export type SeoCheck = {
   checked_at: string;
 };
 
+export type IncidentSeverity = "critical" | "offline";
+
+export type Incident = {
+  id: string;
+  website_id: string;
+  severity: IncidentSeverity;
+  started_at: string;
+  last_seen_at: string;
+  resolved_at: string | null;
+  detection_count: number;
+  created_at: string;
+};
+
 /** Everything the command centre / grid needs for one row, assembled client-side. */
 export type WebsiteWithHealth = Website & {
   latestCheck: HealthCheck | null;
@@ -66,4 +79,5 @@ export type WebsiteWithHealth = Website & {
   checksCount7d: number;
   status: WebsiteStatus;
   brokenLinkCount: number;
+  openIncident: Incident | null;
 };

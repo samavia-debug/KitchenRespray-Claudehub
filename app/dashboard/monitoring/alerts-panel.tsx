@@ -1,6 +1,7 @@
 import Link from "next/link";
 import type { WebsiteWithHealth } from "@/lib/monitoring/types";
 import { getFindings, priorityScore } from "@/lib/monitoring/recommendations";
+import { formatDuration } from "@/lib/monitoring/incidents";
 import CheckAllButton from "./check-all-button";
 
 /**
@@ -86,16 +87,30 @@ export default function AlertsPanel({
             >
               <div style={{ display: "flex", justifyContent: "space-between", gap: "0.75rem", alignItems: "baseline" }}>
                 <strong style={{ fontSize: "0.92rem" }}>{w.name}</strong>
-                <span
-                  style={{
-                    fontSize: "0.72rem",
-                    fontWeight: 600,
-                    textTransform: "uppercase",
-                    letterSpacing: "0.03em",
-                    color: "var(--muted)",
-                  }}
-                >
-                  {w.priority} priority
+                <span style={{ display: "flex", gap: "0.6rem", alignItems: "baseline" }}>
+                  {w.openIncident && (
+                    <span
+                      style={{
+                        fontSize: "0.72rem",
+                        fontWeight: 600,
+                        color: "#b3261e",
+                      }}
+                      title={`Incident open since ${new Date(w.openIncident.started_at).toLocaleString()}`}
+                    >
+                      down {formatDuration(w.openIncident.started_at, null)}
+                    </span>
+                  )}
+                  <span
+                    style={{
+                      fontSize: "0.72rem",
+                      fontWeight: 600,
+                      textTransform: "uppercase",
+                      letterSpacing: "0.03em",
+                      color: "var(--muted)",
+                    }}
+                  >
+                    {w.priority} priority
+                  </span>
                 </span>
               </div>
               {findings.map((f, i) => (

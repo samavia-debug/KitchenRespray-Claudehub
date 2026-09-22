@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { computeWebsiteStatus } from "@/lib/monitoring/status";
-import type { Website, HealthCheck, WebsiteWithHealth } from "@/lib/monitoring/types";
+import type { Website, HealthCheck, Incident, WebsiteWithHealth } from "@/lib/monitoring/types";
 import SummaryCards from "./summary-cards";
 import WebsiteGrid from "./website-grid";
 import AddWebsiteForm from "./add-website-form";
@@ -28,12 +28,13 @@ export default function MonitoringCommandCentre() {
       setCanManage(profile?.role === "Admin" || profile?.role === "Manager");
     }
 
-    const [{ data: sites, error: sitesError }, { data: latest }, { data: uptime }, { data: brokenLinks }] =
+    const [{ data: sites, error: sitesError }, { data: latest }, { data: uptime }, { data: brokenLinks }, { data: openIncidents }] =
       await Promise.all([
         supabase.from("websites").select("*").order("name", { ascending: true }),
         supabase.from("website_latest_check").select("*"),
         supabase.from("website_uptime_7d").select("*"),
         supabase.from("website_broken_links_count").select("*"),
+        supabase.from("incidents").select("*").is("resolved_at", null),
       ]);
 
     if (sitesError) {
@@ -48,6 +49,9 @@ export default function MonitoringCommandCentre() {
     const brokenLinksMap = new Map<string, number>(
       (brokenLinks || []).map((b: any) => [b.website_id, b.broken_count])
     );
+    const openIncidentMap = new Map<string, Incident>(
+      (openIncidents || []).map((i: any) => [i.website_id, i])
+    );
 
     const merged: WebsiteWithHealth[] = (sites as Website[]).map((w) => {
       const latestCheck = latestMap.get(w.id) || null;
@@ -59,6 +63,7 @@ export default function MonitoringCommandCentre() {
         checksCount7d: uptimeRow ? uptimeRow.checks_count : 0,
         status: computeWebsiteStatus(latestCheck),
         brokenLinkCount: brokenLinksMap.get(w.id) || 0,
+        openIncident: openIncidentMap.get(w.id) || null,
       };
     });
 
