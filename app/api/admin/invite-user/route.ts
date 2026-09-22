@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 
+const VALID_ROLES = ["Admin", "Manager", "Staff", "Viewer"];
+
 function generateTempPassword() {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$";
   let password = "";
@@ -36,6 +38,10 @@ export async function POST(request: NextRequest) {
 
   if (!email || !role) {
     return NextResponse.json({ error: "Missing email or role" }, { status: 400 });
+  }
+
+  if (!VALID_ROLES.includes(role)) {
+    return NextResponse.json({ error: `Invalid role. Must be one of: ${VALID_ROLES.join(", ")}` }, { status: 400 });
   }
 
   const tempPassword = generateTempPassword();

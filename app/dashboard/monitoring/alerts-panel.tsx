@@ -2,7 +2,6 @@ import Link from "next/link";
 import type { WebsiteWithHealth } from "@/lib/monitoring/types";
 import { getFindings, priorityScore } from "@/lib/monitoring/recommendations";
 import { formatDuration } from "@/lib/monitoring/incidents";
-import CheckAllButton from "./check-all-button";
 
 /**
  * "Needs action now" — every site with a real finding (not just critical/
@@ -16,15 +15,7 @@ import CheckAllButton from "./check-all-button";
  * (never classify unknown as healthy) applies to this panel too. They get
  * their own rollup instead of 60 duplicate "run a check" line items.
  */
-export default function AlertsPanel({
-  websites,
-  canManage,
-  onChecked,
-}: {
-  websites: WebsiteWithHealth[];
-  canManage: boolean;
-  onChecked: () => void;
-}) {
+export default function AlertsPanel({ websites }: { websites: WebsiteWithHealth[] }) {
   const unchecked = websites.filter((w) => w.status === "unknown");
 
   const ranked = websites
@@ -60,10 +51,10 @@ export default function AlertsPanel({
               {unchecked.length} of {websites.length} website{unchecked.length === 1 ? "" : "s"} {unchecked.length === 1 ? "hasn't" : "haven't"} been checked yet
             </strong>
             <p style={{ margin: "0.2rem 0 0", fontSize: "0.82rem", color: "var(--muted)" }}>
-              No data means no status can be shown for {unchecked.length === 1 ? "it" : "them"} — this is not the same as healthy.
+              No data means no status can be shown for {unchecked.length === 1 ? "it" : "them"} — this is not the same
+              as healthy. Use "Scan all sites now" above to check them immediately.
             </p>
           </div>
-          {canManage && <CheckAllButton onChecked={onChecked} label="Check all now" />}
         </div>
       )}
 

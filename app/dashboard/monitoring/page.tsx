@@ -9,10 +9,14 @@ import WebsiteGrid from "./website-grid";
 import AddWebsiteForm from "./add-website-form";
 import AlertsPanel from "./alerts-panel";
 import NotConnectedCard from "./not-connected-card";
+import MorningSummary from "./morning-summary";
+
+const RECENT_INCIDENT_WINDOW_HOURS = 48;
 
 export default function MonitoringCommandCentre() {
   const supabase = createClient();
   const [websites, setWebsites] = useState<WebsiteWithHealth[] | null>(null);
+  const [recentIncidents, setRecentIncidents] = useState<Incident[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -28,13 +32,19 @@ export default function MonitoringCommandCentre() {
       setCanManage(profile?.role === "Admin" || profile?.role === "Manager");
     }
 
-    const [{ data: sites, error: sitesError }, { data: latest }, { data: uptime }, { data: brokenLinks }, { data: openIncidents }] =
+    const recentCutoff = new Date(Date.now() - RECENT_INCIDENT_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
+
+    const [{ data: sites, error: sitesError }, { data: latest }, { data: uptime }, { data: brokenLinks }, { data: incidentRows }] =
       await Promise.all([
         supabase.from("websites").select("*").order("name", { ascending: true }),
         supabase.from("website_latest_check").select("*"),
         supabase.from("website_uptime_7d").select("*"),
         supabase.from("website_broken_links_count").select("*"),
-        supabase.from("incidents").select("*").is("resolved_at", null),
+        // Every still-open incident (regardless of age) plus anything that
+        // started within the recent window (whether resolved or not) — one
+        // query covers both "what's open right now" and "what happened
+        // overnight" for the morning summary.
+        supabase.from("incidents").select("*").or(`resolved_at.is.null,started_at.gte.${recentCutoff}`),
       ]);
 
     if (sitesError) {
@@ -49,9 +59,11 @@ export default function MonitoringCommandCentre() {
     const brokenLinksMap = new Map<string, number>(
       (brokenLinks || []).map((b: any) => [b.website_id, b.broken_count])
     );
+    const allIncidents = (incidentRows || []) as Incident[];
     const openIncidentMap = new Map<string, Incident>(
-      (openIncidents || []).map((i: any) => [i.website_id, i])
+      allIncidents.filter((i) => !i.resolved_at).map((i) => [i.website_id, i])
     );
+    setRecentIncidents(allIncidents);
 
     const merged: WebsiteWithHealth[] = (sites as Website[]).map((w) => {
       const latestCheck = latestMap.get(w.id) || null;
@@ -105,6 +117,8 @@ export default function MonitoringCommandCentre() {
         <p>Health, performance, and Claude-analysed status across every monitored website.</p>
       </div>
 
+      <MorningSummary websites={websites} recentIncidents={recentIncidents} canManage={canManage} onChecked={load} />
+
       <SummaryCards websites={websites} />
 
       <div className="grid-2" style={{ marginBottom: "1.25rem" }}>
@@ -112,7 +126,7 @@ export default function MonitoringCommandCentre() {
         <NotConnectedCard title="Organic traffic trend" phaseNote="arrives with Google Search Console (Phase 4)." />
       </div>
 
-      <AlertsPanel websites={websites} canManage={canManage} onChecked={load} />
+      <AlertsPanel websites={websites} />
 
       {canManage && <AddWebsiteForm onAdded={load} />}
 

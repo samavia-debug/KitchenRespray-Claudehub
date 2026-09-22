@@ -10,7 +10,25 @@ type Profile = {
   role: string;
 };
 
-const roles = ["Admin", "Manager", "Staff"];
+const roles = ["Admin", "Manager", "Staff", "Viewer"];
+
+const ROLE_COLOR: Record<string, string> = {
+  Admin: "#b5502e",
+  Manager: "#97690a",
+  Staff: "#2e7d32",
+  Viewer: "#6f6a63",
+};
+
+const ROLE_DESCRIPTIONS: { role: string; description: string }[] = [
+  { role: "Admin", description: "Full access — manage websites, run checks, and manage team members/roles." },
+  { role: "Manager", description: "Manage websites and run checks (add/edit sites, trigger scans). Cannot manage team members or change roles." },
+  {
+    role: "Staff",
+    description:
+      "Read-only access to all monitored websites today. Per-site assignment (Staff seeing only their assigned sites) is a planned enhancement, not built yet.",
+  },
+  { role: "Viewer", description: "Read-only access — currently identical to Staff. Kept as a separate role for future tighter restrictions." },
+];
 
 export default function SettingsPage() {
   const supabase = createClient();
@@ -21,6 +39,7 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [authorized, setAuthorized] = useState(false);
   const [myUserId, setMyUserId] = useState<string | null>(null);
+  const [myRole, setMyRole] = useState<string | null>(null);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
@@ -72,6 +91,7 @@ export default function SettingsPage() {
         return;
       }
 
+      setMyRole(myProfile.role);
       setAuthorized(true);
 
       const { data: allProfiles } = await supabase
@@ -294,7 +314,22 @@ export default function SettingsPage() {
     <>
       <div className="page-header">
         <h1>Settings</h1>
-        <p>Account and team settings.</p>
+        <p>
+          Account and team settings.
+          {myRole && (
+            <>
+              {" "}
+              Signed in as{" "}
+              <span
+                className="status-badge"
+                style={{ background: `${ROLE_COLOR[myRole]}1a`, color: ROLE_COLOR[myRole] }}
+              >
+                {myRole}
+              </span>
+              .
+            </>
+          )}
+        </p>
       </div>
 
       {message && (
@@ -386,6 +421,21 @@ export default function SettingsPage() {
         </form>
       </div>
 
+      <div className="card" style={{ marginBottom: "1.5rem" }}>
+        <h2>Role permissions</h2>
+        {ROLE_DESCRIPTIONS.map(({ role, description }) => (
+          <div key={role} style={{ display: "flex", gap: "0.75rem", padding: "0.5rem 0", borderBottom: "1px solid var(--border)" }}>
+            <span
+              className="status-badge"
+              style={{ background: `${ROLE_COLOR[role]}1a`, color: ROLE_COLOR[role], flexShrink: 0, minWidth: "5.5rem", justifyContent: "center" }}
+            >
+              {role}
+            </span>
+            <p style={{ margin: 0, fontSize: "0.85rem", color: "var(--muted)" }}>{description}</p>
+          </div>
+        ))}
+      </div>
+
       <div className="card">
         <h2>Team members</h2>
 
@@ -428,7 +478,7 @@ export default function SettingsPage() {
               value={p.role}
               onChange={(e) => updateRole(p.id, e.target.value)}
               disabled={savingId === p.id}
-              style={{ maxWidth: "160px" }}
+              style={{ maxWidth: "160px", borderColor: ROLE_COLOR[p.role] || undefined, color: ROLE_COLOR[p.role] || undefined, fontWeight: 600 }}
             >
               {roles.map((r) => (
                 <option key={r} value={r}>
