@@ -24,7 +24,9 @@ A working dashboard foundation with:
 
 ## Website Monitoring & Analytics module (Phase 1)
 
-Central Website Command Centre for the ~60 company websites, at `/dashboard/monitoring`.
+Central Website Command Centre for the company's 26 monitored websites, at
+`/dashboard/monitoring` (narrowed down from an initial 61-site inventory —
+see `supabase/migrations/20260922150000_descope_to_26_sites.sql`).
 Phase 1 scope: multi-website data model + real HTTP/SSL health checks. Google
 Analytics, Search Console, SEO, leads, WordPress, alerts, and Claude analysis
 are separate later phases (each tab in a site's dashboard says so explicitly).
