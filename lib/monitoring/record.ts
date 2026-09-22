@@ -5,7 +5,7 @@ import { checkCoreWebVitals } from "./vitals";
 import { checkWordPress } from "./wordpress";
 import { computeWebsiteStatus } from "./status";
 import { decideIncidentAction, formatDuration } from "./incidents";
-import { notifySlack, formatIncidentOpenedMessage, formatIncidentResolvedMessage } from "./notify";
+import { notifySlack, notifyWhatsApp, formatIncidentOpenedMessage, formatIncidentResolvedMessage } from "./notify";
 import type { HealthCheck } from "./types";
 
 /** Runs a health probe for one website and persists the result. Service-role write. */
@@ -39,10 +39,11 @@ export async function runAndRecordCheck(websiteId: string, domain: string) {
  * Opens, continues, or resolves this website's incident record based on
  * the status just computed from the new check — see decideIncidentAction
  * for the actual open/continue/resolve rules — and sends the corresponding
- * Slack notification on open/resolve only (never on "continue", which is
- * exactly the dedup this table exists for). Never lets a health-check
- * failure here block the check itself from being recorded; a failure to
- * sync incident state or notify is logged, not thrown.
+ * Slack + WhatsApp notifications on open/resolve only (never on
+ * "continue", which is exactly the dedup this table exists for). Never
+ * lets a health-check failure here block the check itself from being
+ * recorded; a failure to sync incident state or notify is logged, not
+ * thrown.
  */
 async function syncIncidentState(
   service: ReturnType<typeof createServiceClient>,
@@ -72,7 +73,8 @@ async function syncIncidentState(
       });
 
       const { data: website } = await service.from("websites").select("name").eq("id", websiteId).single();
-      await notifySlack(formatIncidentOpenedMessage(website?.name || domain, domain, action.severity));
+      const openedMessage = formatIncidentOpenedMessage(website?.name || domain, domain, action.severity);
+      await Promise.all([notifySlack(openedMessage), notifyWhatsApp(openedMessage)]);
     } else if (action.type === "continue" && openIncident) {
       await service
         .from("incidents")
@@ -83,7 +85,8 @@ async function syncIncidentState(
 
       const { data: website } = await service.from("websites").select("name").eq("id", websiteId).single();
       const duration = formatDuration(openIncident.started_at, check.checked_at);
-      await notifySlack(formatIncidentResolvedMessage(website?.name || domain, domain, duration));
+      const resolvedMessage = formatIncidentResolvedMessage(website?.name || domain, domain, duration);
+      await Promise.all([notifySlack(resolvedMessage), notifyWhatsApp(resolvedMessage)]);
     }
   } catch (err) {
     console.error(`Failed to sync incident state for website ${websiteId}:`, err);

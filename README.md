@@ -94,10 +94,17 @@ need for this — `vercel.json` can go back to `*/30 * * * *` at that point.
 add a website from the Command Centre UI, or insert directly into the
 `websites` table. Designed to scale to 100+ rows without redesign.
 
-**Incidents & Slack notifications** — every check syncs an `incidents` row
-(one per continuous critical/offline spell, not one per check — see
-`lib/monitoring/incidents.ts`). Set `SLACK_WEBHOOK_URL` (Slack → Apps →
-Incoming Webhooks → Add to Slack → pick a channel → copy the URL) to get
-notified when an incident opens and when it resolves. Optional — checks
-still run and incidents still get recorded without it, notifications are
-just silently skipped.
+**Incidents & notifications** — every check syncs an `incidents` row (one
+per continuous critical/offline spell, not one per check — see
+`lib/monitoring/incidents.ts`). Two independent, optional channels notify
+on incident open/resolve — checks still run and incidents still get
+recorded without either configured, notifications are just silently
+skipped:
+- **Slack**: set `SLACK_WEBHOOK_URL` (Slack → Apps → Incoming Webhooks →
+  Add to Slack → pick a channel → copy the URL).
+- **WhatsApp**: set all 4 of `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`,
+  `TWILIO_WHATSAPP_FROM`, `TWILIO_WHATSAPP_TO` (Twilio console → get a
+  WhatsApp sender — their free Sandbox number works for fast testing, each
+  recipient just needs to text the sandbox's join code once to opt in).
+  `TWILIO_WHATSAPP_TO` accepts a comma-separated list to alert more than
+  one person.
