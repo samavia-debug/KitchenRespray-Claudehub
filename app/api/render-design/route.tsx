@@ -3,12 +3,31 @@ import { createServiceClient } from "@/lib/supabase/service";
 
 export const runtime = "edge";
 
-const COLORS = {
+const DEFAULT_COLORS = {
   green: "#2d3b2e",
   cream: "#f6f1e7",
   white: "#ffffff",
   text: "#2a2a2a",
 };
+
+type Colors = typeof DEFAULT_COLORS;
+
+/**
+ * Reads up to 2 hex colours out of company_profile.brand_colours (a free-
+ * text field, e.g. "Dark green #2d3b2e and cream #f6f1e7") and uses them
+ * as the primary/background colours. Falls back to the original defaults
+ * for anything not found, so this never breaks before Company Knowledge
+ * is filled in.
+ */
+function resolveColors(brandColours: string | null | undefined): Colors {
+  const hexMatches = (brandColours || "").match(/#[0-9a-fA-F]{6}\b/g) || [];
+  return {
+    green: hexMatches[0] || DEFAULT_COLORS.green,
+    cream: hexMatches[1] || DEFAULT_COLORS.cream,
+    white: DEFAULT_COLORS.white,
+    text: DEFAULT_COLORS.text,
+  };
+}
 
 const CANVAS_WIDTH = 1080;
 const CANVAS_PADDING = 60;
@@ -35,7 +54,7 @@ type PhotoUrls = {
   photo_after_url: string | null;
 };
 
-function renderBlock(block: Block, key: number, photos: PhotoUrls) {
+function renderBlock(block: Block, key: number, photos: PhotoUrls, colors: Colors) {
   switch (block.type) {
     case "badge":
       return (
@@ -47,7 +66,7 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls) {
             padding: "10px 22px",
             borderRadius: "999px",
             background: "rgba(45,59,46,0.08)",
-            color: COLORS.green,
+            color: colors.green,
             fontSize: 22,
             fontWeight: 700,
             letterSpacing: 1,
@@ -67,7 +86,7 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls) {
                 display: "flex",
                 width: 34,
                 height: 34,
-                background: COLORS.green,
+                background: colors.green,
                 clipPath:
                   "polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)",
               }}
@@ -84,7 +103,7 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls) {
             display: "flex",
             fontSize: 58,
             fontWeight: 800,
-            color: COLORS.green,
+            color: colors.green,
             lineHeight: 1.15,
           }}
         >
@@ -100,7 +119,7 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls) {
             display: "flex",
             fontSize: 40,
             fontStyle: "italic",
-            color: COLORS.text,
+            color: colors.text,
             lineHeight: 1.3,
           }}
         >
@@ -112,7 +131,7 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls) {
       return (
         <div
           key={key}
-          style={{ display: "flex", fontSize: 30, color: COLORS.text, lineHeight: 1.4 }}
+          style={{ display: "flex", fontSize: 30, color: colors.text, lineHeight: 1.4 }}
         >
           {block.text}
         </div>
@@ -122,7 +141,7 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls) {
       return (
         <div
           key={key}
-          style={{ display: "flex", fontSize: 26, fontWeight: 700, color: COLORS.green }}
+          style={{ display: "flex", fontSize: 26, fontWeight: 700, color: colors.green }}
         >
           {block.text}
         </div>
@@ -131,10 +150,10 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls) {
     case "stat_highlight":
       return (
         <div key={key} style={{ display: "flex", flexDirection: "column" }}>
-          <div style={{ display: "flex", fontSize: 84, fontWeight: 900, color: COLORS.green }}>
+          <div style={{ display: "flex", fontSize: 84, fontWeight: 900, color: colors.green }}>
             {block.stat}
           </div>
-          <div style={{ display: "flex", fontSize: 24, color: COLORS.text }}>{block.label}</div>
+          <div style={{ display: "flex", fontSize: 24, color: colors.text }}>{block.label}</div>
         </div>
       );
 
@@ -218,8 +237,8 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls) {
           style={{
             display: "flex",
             width: "100%",
-            background: COLORS.green,
-            color: COLORS.white,
+            background: colors.green,
+            color: colors.white,
             padding: "22px 30px",
             fontSize: 24,
             fontWeight: 700,
@@ -273,6 +292,13 @@ export async function POST(request: Request) {
       photo_after_url: designRequest.photo_after_url || null,
     };
 
+    const { data: companyProfile } = await supabase
+      .from("company_profile")
+      .select("brand_colours")
+      .eq("id", 1)
+      .maybeSingle();
+    const colors = resolveColors(companyProfile?.brand_colours);
+
     const imageResponse = new ImageResponse(
       (
         <div
@@ -281,12 +307,12 @@ export async function POST(request: Request) {
             flexDirection: "column",
             width: `${CANVAS_WIDTH}px`,
             height: `${CANVAS_WIDTH}px`,
-            background: COLORS.cream,
+            background: colors.cream,
             padding: `${CANVAS_PADDING}px`,
             gap: "28px",
           }}
         >
-          {blocks.map((block, i) => renderBlock(block, i, photos))}
+          {blocks.map((block, i) => renderBlock(block, i, photos, colors))}
         </div>
       ),
       { width: CANVAS_WIDTH, height: CANVAS_WIDTH }

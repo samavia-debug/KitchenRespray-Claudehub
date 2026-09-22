@@ -37,8 +37,9 @@ export async function GET(request: NextRequest) {
         grant_type: "authorization_code",
         code_verifier: codeVerifier,
         code: code,
-        redirect_uri:
-          "https://kitchenrespray-dashboard.vercel.app/api/canva/callback",
+        // Must exactly match what /api/canva/connect sent — derived from
+        // the live request's own origin, not hardcoded.
+        redirect_uri: `${request.nextUrl.origin}/api/canva/callback`,
       }),
     }
   );

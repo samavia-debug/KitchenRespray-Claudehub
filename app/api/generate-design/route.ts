@@ -50,7 +50,16 @@ const POST_TYPES = [
 // Each block has a fixed set of props it accepts — this keeps every design
 // renderable while still giving Claude real creative control over which
 // blocks to use, in what order, and with what content.
-const BLOCK_LIBRARY = `
+//
+// Brand colours/fonts are read from company_profile (Company Knowledge)
+// rather than hardcoded — falls back to the render engine's own defaults
+// (see app/api/render-design/route.tsx's COLORS) only when the profile
+// hasn't been filled in yet, so this doesn't break before that happens.
+function buildBlockLibrary(companyProfile: { brand_colours?: string | null; brand_fonts?: string | null } | null) {
+  const colours = companyProfile?.brand_colours?.trim() || "dark green (#2d3b2e) and cream/off-white background (default — set Brand colours in Company Knowledge to change this)";
+  const fonts = companyProfile?.brand_fonts?.trim() || "a clean modern sans-serif for headlines/UI text, and an elegant serif for pull-quotes/testimonials (default — set Brand fonts in Company Knowledge to change this)";
+
+  return `
 Available visual blocks (choose and order any combination that fits the post_type):
 
 - "badge": a small pill-shaped label at the top, e.g. "VERIFIED CUSTOMER REVIEW" or "NEW COLOUR TREND". props: { text }
@@ -61,11 +70,12 @@ Available visual blocks (choose and order any combination that fits the post_typ
 - "author_line": small attribution line, e.g. "— Sarah M.". props: { text }
 - "stat_highlight": one big bold number/stat with a short label underneath, e.g. "80%" / "Average saving vs replacement". props: { stat, label }
 - "photo_split": a before/after side-by-side image layout with labels. props: {} (photos are added separately, just include this block if the post needs it)
-- "photo_single": a single full-width photo area. props: {} 
+- "photo_single": a single full-width photo area. props: {}
 - "cta_footer": the bottom bar with logo, contact info and CTA text. props: { text } (always include this block last — it is the brand footer)
 
-Brand colours: dark green (#2d3b2e approx) and cream/off-white background, matching the existing KitchenRespray visual identity. Use a clean modern sans-serif for headlines/UI text, and an elegant serif for pull-quotes/testimonials (matching the reference example).
+Brand colours: ${colours}. Fonts: ${fonts}.
 `;
+}
 
 export async function POST(request: NextRequest) {
   const supabase = createClient();
@@ -122,7 +132,10 @@ export async function POST(request: NextRequest) {
     (t) => `- ${t.key}: ${t.label} — ${t.guidance}`
   ).join("\n");
 
-  const systemPrompt = `You are a marketing content AND layout designer for KitchenRespray.com, a kitchen respraying service. You write on-brand social copy AND compose the visual layout for each post using a fixed library of design blocks.
+  const companyName = companyProfile?.company_name?.trim() || "the company";
+  const companyDescription = companyProfile?.description?.trim();
+
+  const systemPrompt = `You are a marketing content AND layout designer for ${companyName}${companyDescription ? `, ${companyDescription}` : ""}. You write on-brand social copy AND compose the visual layout for each post using a fixed library of design blocks.
 
 Available post types:
 ${postTypeMenu}
@@ -133,7 +146,7 @@ Recently used post types for this service line (most recent first): ${
 
 Choose the post type that best fits the brief. If the brief doesn't clearly call for a specific type, choose a type that is DIFFERENT from the recently used ones above, so content stays varied. Do not default to before_after unless it's genuinely the best fit or the brief asks for it.
 
-${BLOCK_LIBRARY}
+${buildBlockLibrary(companyProfile)}
 
 Always respond with ONLY a valid JSON object, no other text, no markdown formatting, in this exact shape:
 {

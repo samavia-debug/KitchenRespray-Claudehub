@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import crypto from "crypto";
 
 export const dynamic = "force-dynamic";
@@ -11,7 +11,7 @@ function base64url(input: Buffer) {
     .replace(/=/g, "");
 }
 
-export async function GET() {
+export async function GET(request: NextRequest) {
   const codeVerifier = base64url(crypto.randomBytes(64));
   const codeChallenge = base64url(
     crypto.createHash("sha256").update(codeVerifier).digest()
@@ -33,10 +33,9 @@ export async function GET() {
   authUrl.searchParams.set("code_challenge_method", "s256");
   authUrl.searchParams.set("response_type", "code");
   authUrl.searchParams.set("client_id", process.env.CANVA_CLIENT_ID!);
-  authUrl.searchParams.set(
-    "redirect_uri",
-    "https://kitchenrespray-dashboard.vercel.app/api/canva/callback"
-  );
+  // Derived from the live request's own origin — was previously hardcoded
+  // to a Vercel URL that broke when the app moved to Netlify.
+  authUrl.searchParams.set("redirect_uri", `${request.nextUrl.origin}/api/canva/callback`);
   authUrl.searchParams.set("scope", scope);
   authUrl.searchParams.set("state", state);
 
