@@ -59,6 +59,17 @@ export type SeoCheck = {
   checked_at: string;
 };
 
+export type GoogleService = "analytics" | "search_console";
+
+export type GoogleConnection = {
+  service: GoogleService;
+  external_account_email: string | null;
+  property_id: string | null;
+  site_url: string | null;
+  connected_at: string;
+  last_synced_at: string | null;
+};
+
 export type IncidentSeverity = "critical" | "offline";
 
 export type Incident = {

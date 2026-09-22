@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { computeWebsiteStatus, sslDaysRemaining } from "@/lib/monitoring/status";
 import { getFindings } from "@/lib/monitoring/recommendations";
@@ -11,6 +12,7 @@ import StatusBadge from "../status-badge";
 import NotConnectedCard from "../not-connected-card";
 import ResponseTimeChart from "../response-time-chart";
 import RunCheckButton from "./run-check-button";
+import GoogleConnectionCard from "./google-connection-card";
 
 const RANGES = [
   { label: "24 hours", hours: 24 },
@@ -40,8 +42,20 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleString();
 }
 
+const GOOGLE_STATUS_MESSAGE: Record<string, string> = {
+  connected: "Connected successfully.",
+  denied: "Connection was denied or cancelled.",
+  missing_params: "Connection failed — missing parameters. Try again.",
+  state_mismatch: "Connection failed — security check mismatch. Try again.",
+  token_error: "Connection failed while exchanging the authorization code.",
+  save_error: "Connected to Google, but saving the connection failed.",
+};
+
 export default function SiteDashboard({ websiteId }: { websiteId: string }) {
   const supabase = createClient();
+  const searchParams = useSearchParams();
+  const googleStatus = searchParams.get("google");
+  const googleMsg = searchParams.get("msg");
   const [website, setWebsite] = useState<Website | null>(null);
   const [checks, setChecks] = useState<HealthCheck[]>([]);
   const [linkChecks, setLinkChecks] = useState<LinkCheck[]>([]);
@@ -128,6 +142,21 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
           {website.category ? ` · ${website.category}` : ""}
         </p>
       </div>
+
+      {googleStatus && (
+        <div
+          className="card"
+          style={{
+            padding: "0.75rem 1rem",
+            marginBottom: "1rem",
+            background: "var(--accent-soft)",
+            border: "1px solid var(--accent)",
+          }}
+        >
+          {GOOGLE_STATUS_MESSAGE[googleStatus] || `Google connection status: ${googleStatus}`}
+          {googleMsg ? ` (${googleMsg})` : ""}
+        </div>
+      )}
 
       <div className="tabs">
         {TABS.map((t) => (
@@ -337,11 +366,11 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
       )}
 
       {tab === "Google Analytics" && (
-        <NotConnectedCard title="Google Analytics" phaseNote="arrives in Phase 3 (GA4 integration)." />
+        <GoogleConnectionCard websiteId={website.id} service="analytics" canManage={canManage} />
       )}
 
       {tab === "Search Console" && (
-        <NotConnectedCard title="Google Search Console" phaseNote="arrives in Phase 4 (Search Console integration)." />
+        <GoogleConnectionCard websiteId={website.id} service="search_console" canManage={canManage} />
       )}
 
       {tab === "SEO" && (
