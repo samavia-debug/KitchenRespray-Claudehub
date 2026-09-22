@@ -59,6 +59,16 @@ export type SeoCheck = {
   checked_at: string;
 };
 
+export type CoreWebVitalsCheck = {
+  website_id: string;
+  performance_score: number | null;
+  lcp_ms: number | null;
+  cls: number | null;
+  tbt_ms: number | null;
+  has_field_data: boolean;
+  checked_at: string;
+};
+
 export type GoogleService = "analytics" | "search_console";
 
 export type GoogleConnection = {

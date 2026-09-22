@@ -1,6 +1,7 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import { checkWebsiteHealth, checkBrokenLinks } from "./checker";
 import { checkSeo, checkDomainExpiry } from "./seo";
+import { checkCoreWebVitals } from "./vitals";
 import { computeWebsiteStatus } from "./status";
 import { decideIncidentAction, formatDuration } from "./incidents";
 import { notifySlack, formatIncidentOpenedMessage, formatIncidentResolvedMessage } from "./notify";
@@ -177,4 +178,39 @@ export async function runAndRecordDomainExpiryCheck(websiteId: string, domain: s
   if (error) throw new Error(`Failed to record domain expiry check: ${error.message}`);
 
   return { website: data, errorMessage: result.errorMessage };
+}
+
+/**
+ * Runs a PageSpeed Insights (mobile) audit and upserts the result. Manual
+ * only — see the comment on the core_web_vitals_checks table migration for
+ * why this isn't on the health-check cadence (slow, quota-limited).
+ */
+export async function runAndRecordVitalsCheck(websiteId: string, domain: string) {
+  const result = await checkCoreWebVitals(domain);
+
+  if (result.errorMessage) {
+    throw new Error(result.errorMessage);
+  }
+
+  const service = createServiceClient();
+  const { data, error } = await service
+    .from("core_web_vitals_checks")
+    .upsert(
+      {
+        website_id: websiteId,
+        performance_score: result.performanceScore,
+        lcp_ms: result.lcpMs,
+        cls: result.cls,
+        tbt_ms: result.tbtMs,
+        has_field_data: result.hasFieldData,
+        checked_at: new Date().toISOString(),
+      },
+      { onConflict: "website_id" }
+    )
+    .select()
+    .single();
+
+  if (error) throw new Error(`Failed to record Core Web Vitals check: ${error.message}`);
+
+  return data;
 }

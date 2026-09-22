@@ -56,7 +56,17 @@ export async function GET(request: NextRequest, { params }: { params: { id: stri
     return NextResponse.json({ error: seoCheckError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ website, checks, linkChecks, seoCheck });
+  const { data: vitalsCheck, error: vitalsCheckError } = await supabase
+    .from("core_web_vitals_checks")
+    .select("*")
+    .eq("website_id", params.id)
+    .maybeSingle();
+
+  if (vitalsCheckError) {
+    return NextResponse.json({ error: vitalsCheckError.message }, { status: 500 });
+  }
+
+  return NextResponse.json({ website, checks, linkChecks, seoCheck, vitalsCheck });
 }
 
 export async function PATCH(request: NextRequest, { params }: { params: { id: string } }) {

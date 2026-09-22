@@ -7,7 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 import { computeWebsiteStatus, sslDaysRemaining } from "@/lib/monitoring/status";
 import { getFindings } from "@/lib/monitoring/recommendations";
 import { formatDuration } from "@/lib/monitoring/incidents";
-import type { Website, HealthCheck, LinkCheck, SeoCheck, Incident } from "@/lib/monitoring/types";
+import { rateCls, rateLcp, rateTbt } from "@/lib/monitoring/vitals";
+import type { Website, HealthCheck, LinkCheck, SeoCheck, Incident, CoreWebVitalsCheck } from "@/lib/monitoring/types";
 import StatusBadge from "../status-badge";
 import NotConnectedCard from "../not-connected-card";
 import ResponseTimeChart from "../response-time-chart";
@@ -42,6 +43,40 @@ function formatDate(iso: string | null): string {
   return new Date(iso).toLocaleString();
 }
 
+const RATING_COLOR: Record<string, string> = {
+  good: "#2e7d32",
+  "needs-improvement": "#b98900",
+  poor: "#b3261e",
+};
+
+function VitalMetricRow({
+  label,
+  value,
+  unit,
+  rating,
+  decimals = 0,
+}: {
+  label: string;
+  value: number | null;
+  unit: string;
+  rating: "good" | "needs-improvement" | "poor" | null;
+  decimals?: number;
+}) {
+  return (
+    <p style={{ fontSize: "0.9rem" }}>
+      <strong>{label}:</strong>{" "}
+      {value !== null ? (
+        <span style={{ color: rating ? RATING_COLOR[rating] : undefined, fontWeight: rating ? 600 : undefined }}>
+          {value.toFixed(decimals)}
+          {unit} {rating && `(${rating.replace("-", " ")})`}
+        </span>
+      ) : (
+        "—"
+      )}
+    </p>
+  );
+}
+
 const GOOGLE_STATUS_MESSAGE: Record<string, string> = {
   connected: "Connected successfully.",
   denied: "Connection was denied or cancelled.",
@@ -60,6 +95,7 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
   const [checks, setChecks] = useState<HealthCheck[]>([]);
   const [linkChecks, setLinkChecks] = useState<LinkCheck[]>([]);
   const [seoCheck, setSeoCheck] = useState<SeoCheck | null>(null);
+  const [vitalsCheck, setVitalsCheck] = useState<CoreWebVitalsCheck | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [canManage, setCanManage] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -90,6 +126,7 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
     setChecks(data.checks || []);
     setLinkChecks(data.linkChecks || []);
     setSeoCheck(data.seoCheck || null);
+    setVitalsCheck(data.vitalsCheck || null);
 
     const { data: incidentRows } = await supabase
       .from("incidents")
@@ -333,8 +370,7 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
           </div>
           <p style={{ color: "var(--muted)", fontSize: "0.85rem", margin: "0.5rem 0 1rem" }}>
             {checksInRange.length} check{checksInRange.length === 1 ? "" : "s"} in this range (of the last {checks.length}
-            {checks.length === 100 ? "+" : ""} stored). Core Web Vitals arrive with a dedicated performance provider in a
-            later phase.
+            {checks.length === 100 ? "+" : ""} stored).
           </p>
           <ResponseTimeChart checks={checksInRange} height={180} />
           <div className="table-wrap" style={{ marginTop: "1.25rem" }}>
@@ -362,6 +398,51 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {tab === "Performance" && (
+        <div className="card">
+          <h2>Core Web Vitals (mobile)</h2>
+          <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
+            Google PageSpeed Insights, mobile strategy. Manually triggered — a real Lighthouse
+            audit takes 15-30+ seconds and PageSpeed's free quota is limited, so this isn't run on
+            the automatic monitoring schedule.
+          </p>
+          {canManage && (
+            <div style={{ marginBottom: "1rem" }}>
+              <RunCheckButton
+                websiteId={website.id}
+                onChecked={load}
+                action="check-vitals"
+                label="Check Core Web Vitals now"
+                runningLabel="Running Lighthouse audit... (up to 30s)"
+              />
+            </div>
+          )}
+          {vitalsCheck ? (
+            <div className="grid-2">
+              <div>
+                <p style={{ fontSize: "0.9rem" }}>
+                  <strong>Performance score:</strong>{" "}
+                  {vitalsCheck.performance_score !== null ? `${vitalsCheck.performance_score}/100` : "—"}
+                </p>
+                <VitalMetricRow label="LCP (Largest Contentful Paint)" value={vitalsCheck.lcp_ms} unit="ms" rating={rateLcp(vitalsCheck.lcp_ms)} />
+                <VitalMetricRow label="CLS (Cumulative Layout Shift)" value={vitalsCheck.cls} unit="" rating={rateCls(vitalsCheck.cls)} decimals={3} />
+                <VitalMetricRow label="TBT (Total Blocking Time, lab proxy for INP)" value={vitalsCheck.tbt_ms} unit="ms" rating={rateTbt(vitalsCheck.tbt_ms)} />
+              </div>
+              <div>
+                <p style={{ fontSize: "0.9rem" }}>
+                  Real-user field data: {vitalsCheck.has_field_data ? "available" : "not available (site doesn't have enough Chrome traffic to report)"}
+                </p>
+                <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginTop: "1rem" }}>
+                  Last checked: {formatDate(vitalsCheck.checked_at)}
+                </p>
+              </div>
+            </div>
+          ) : (
+            <p style={{ color: "var(--muted)" }}>No Core Web Vitals check recorded yet.</p>
+          )}
         </div>
       )}
 
