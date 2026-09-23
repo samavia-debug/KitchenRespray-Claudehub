@@ -3,8 +3,12 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getValidCanvaAccessToken } from "@/lib/canva/token";
 
+// Verified against the connected Canva account's real design list — the
+// previous "Before & After" id (DAHUyMnViKI) was a guess made before Canva
+// was ever connected and didn't exist. Replaced with the real
+// "BRAND — Social — Before & After" template.
 const templateMap: Record<string, string> = {
-  "Before & After": "DAHUyMnViKI",
+  "Before & After": "DAHT4XnKvXM",
   "Showroom": "DAHUyAaVGTo",
   "Promotional": "DAHUyE2L7RM",
 };

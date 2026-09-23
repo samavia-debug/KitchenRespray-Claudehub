@@ -26,6 +26,11 @@ export async function GET(request: NextRequest) {
     "asset:write",
     "folder:read",
     "folder:write",
+    // Needed to list and read the fields of real Brand Templates for
+    // Autofill — without these the account's actual template library is
+    // invisible to the API (only ad-hoc designs are, via design:*).
+    "brandtemplate:meta:read",
+    "brandtemplate:content:read",
   ].join(" ");
 
   const authUrl = new URL("https://www.canva.com/api/oauth/authorize");
