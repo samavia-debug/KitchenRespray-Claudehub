@@ -1,6 +1,32 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
+// Distinct compositions, not just different copy in the same box — this is
+// what actually varies the LAYOUT (see app/api/render-design/route.tsx,
+// which implements one renderer per key). Persisted in the repurposed
+// generated_design_notes column (no longer used for its original purpose
+// now that blocks replaced free-text design notes).
+const LAYOUTS = [
+  {
+    key: "stacked",
+    label: "Stacked Card",
+    guidance:
+      "A single vertical card on a plain background: badge, one photo area, headline, body copy, CTA footer stacked top to bottom. Safe and clean, works for any post type. Best when there's a lot of text to fit (testimonials, educational content) or when no strong single photo is available.",
+  },
+  {
+    key: "photo_overlay",
+    label: "Full-Bleed Photo Overlay",
+    guidance:
+      "One photo fills the entire canvas edge to edge with a dark gradient at the bottom and the headline/CTA overlaid in light text near the bottom. Best for a single striking photo — promotional offers, inspiration, local/location posts, a great single 'after' shot. Only choose this if a photo is actually available (see 'Photos available' below) — never choose it when there is no photo.",
+  },
+  {
+    key: "split",
+    label: "Split Panel",
+    guidance:
+      "Canvas splits into two halves side by side: a colour panel with the headline/body/CTA on one side, the photo(s) filling the other side full-height. Best for before/after comparisons or project showcases pairing a photo with a short punchy message. Only choose this if at least one photo is available — never choose it when there is no photo.",
+  },
+];
+
 const POST_TYPES = [
   {
     key: "before_after",
@@ -118,7 +144,7 @@ export async function POST(request: NextRequest) {
 
   const { data: recentRequests } = await supabase
     .from("design_requests")
-    .select("generated_post_type")
+    .select("generated_post_type, generated_design_notes")
     .eq("service_line", designRequest.service_line)
     .not("generated_post_type", "is", null)
     .order("created_at", { ascending: false })
@@ -128,9 +154,20 @@ export async function POST(request: NextRequest) {
     .map((r) => r.generated_post_type)
     .filter(Boolean);
 
+  const recentLayouts = (recentRequests || [])
+    .map((r) => r.generated_design_notes)
+    .filter(Boolean);
+
   const postTypeMenu = POST_TYPES.map(
     (t) => `- ${t.key}: ${t.label} — ${t.guidance}`
   ).join("\n");
+
+  const hasPhoto = Boolean(
+    designRequest.photo_url || designRequest.photo_before_url || designRequest.photo_after_url
+  );
+  const hasBeforeAfter = Boolean(designRequest.photo_before_url && designRequest.photo_after_url);
+
+  const layoutMenu = LAYOUTS.map((l) => `- ${l.key}: ${l.label} — ${l.guidance}`).join("\n");
 
   const companyName = companyProfile?.company_name?.trim() || "the company";
   const companyDescription = companyProfile?.description?.trim();
@@ -146,11 +183,33 @@ Recently used post types for this service line (most recent first): ${
 
 Choose the post type that best fits the brief. If the brief doesn't clearly call for a specific type, choose a type that is DIFFERENT from the recently used ones above, so content stays varied. Do not default to before_after unless it's genuinely the best fit or the brief asks for it.
 
+Available layouts (this controls the overall visual composition, not just the copy — pick deliberately, it's the main thing that makes posts look different from each other):
+${layoutMenu}
+
+Photos available for this request: ${
+    hasPhoto
+      ? hasBeforeAfter
+        ? "before AND after photos"
+        : designRequest.photo_before_url
+        ? "before photo only"
+        : designRequest.photo_after_url
+        ? "after photo only"
+        : "one single photo"
+      : "none"
+  }. Do not choose "photo_overlay" or "split" if no photo is available — use "stacked" instead in that case.
+
+Recently used layouts for this service line (most recent first): ${
+    recentLayouts.length ? recentLayouts.join(", ") : "None yet"
+  }
+
+Choose a layout that is DIFFERENT from the recently used ones above whenever a photo is available and more than one layout would genuinely work, so consecutive posts don't look the same. Only repeat a layout when it's clearly the best fit or no alternative is possible (e.g. no photo available).
+
 ${buildBlockLibrary(companyProfile)}
 
 Always respond with ONLY a valid JSON object, no other text, no markdown formatting, in this exact shape:
 {
   "post_type": "one of the post type keys",
+  "layout": "one of the layout keys",
   "headline": "short version for internal reference",
   "caption": "the social media caption text, written for the platform",
   "cta": "the call to action text",
@@ -161,7 +220,7 @@ Always respond with ONLY a valid JSON object, no other text, no markdown formatt
   ]
 }
 
-The "blocks" array is the actual visual design — choose blocks and content that genuinely fit the post_type (e.g. testimonial posts should use badge + stars + pull_quote + author_line + cta_footer; educational posts might use big_headline + body_text + stat_highlight + cta_footer; before/after posts should use photo_split + a short headline + cta_footer). Vary the composition meaningfully between post types — don't reuse the same block structure every time.`;
+The "blocks" array is the content of the design — choose blocks and content that genuinely fit the post_type and the chosen layout (e.g. testimonial posts should use badge + stars + pull_quote + author_line + cta_footer; educational posts might use big_headline + body_text + stat_highlight + cta_footer; before/after posts should use a short headline + cta_footer, and can skip photo blocks entirely when layout is "photo_overlay" or "split" since those layouts place the photo themselves). Vary the composition meaningfully — don't reuse the same block structure every time.`;
 
   const userPrompt = `
 Company: ${companyProfile?.company_name || ""}
@@ -181,7 +240,7 @@ Platform: ${designRequest.platform}
 Brief: ${designRequest.brief}
 Additional instructions: ${designRequest.additional_instructions || "None"}
 
-Pick the best post_type (favouring variety, per the instructions), write the caption and cta, then compose the "blocks" array — the actual visual layout — using only blocks from the library above. Make sure the block composition genuinely matches the post_type and feels intentional, not generic.
+Pick the best post_type and layout (favouring variety, per the instructions), write the caption and cta, then compose the "blocks" array using only blocks from the library above. Make sure the block composition genuinely matches the post_type and the chosen layout and feels intentional, not generic.
 `;
 
   try {
@@ -223,13 +282,19 @@ Pick the best post_type (favouring variety, per the instructions), write the cap
       );
     }
 
+    const layoutKeys = LAYOUTS.map((l) => l.key);
+    let layout = layoutKeys.includes(parsed.layout) ? parsed.layout : "stacked";
+    if ((layout === "photo_overlay" || layout === "split") && !hasPhoto) {
+      layout = "stacked";
+    }
+
     const { error: updateError } = await supabase
       .from("design_requests")
       .update({
         generated_headline: parsed.headline || null,
         generated_caption: parsed.caption || null,
         generated_cta: parsed.cta || null,
-        generated_design_notes: null, // replaced by structured blocks below
+        generated_design_notes: layout, // repurposed to store the chosen layout key
         generated_post_type: parsed.post_type || null,
         generated_blocks: parsed.blocks || null, // requires new jsonb column, see next step
         status: "generated",

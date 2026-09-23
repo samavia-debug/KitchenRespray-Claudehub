@@ -10,22 +10,47 @@ const DEFAULT_COLORS = {
   text: "#2a2a2a",
 };
 
-type Colors = typeof DEFAULT_COLORS;
+type Colors = typeof DEFAULT_COLORS & { lightText: string };
+
+function relativeLuminance(hex: string): number {
+  const r = parseInt(hex.slice(1, 3), 16) / 255;
+  const g = parseInt(hex.slice(3, 5), 16) / 255;
+  const b = parseInt(hex.slice(5, 7), 16) / 255;
+  const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4));
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
 
 /**
- * Reads up to 2 hex colours out of company_profile.brand_colours (a free-
- * text field, e.g. "Dark green #2d3b2e and cream #f6f1e7") and uses them
- * as the primary/background colours. Falls back to the original defaults
- * for anything not found, so this never breaks before Company Knowledge
- * is filled in.
+ * Reads hex colours out of company_profile.brand_colours (a free-text
+ * field). With 3+ colours, roles are assigned by luminance rather than
+ * input order — the darkest becomes body text, the lightest becomes the
+ * page background, and the remaining (most likely the brand's bright
+ * accent) becomes the primary colour used for headlines/badges/CTA
+ * background, with its own text colour picked for contrast against it.
+ * With 0-2 colours, falls back to the original order-based behaviour
+ * (first = primary, second = background) to match the original 2-colour
+ * "dark green + cream" design.
  */
 function resolveColors(brandColours: string | null | undefined): Colors {
   const hexMatches = (brandColours || "").match(/#[0-9a-fA-F]{6}\b/g) || [];
+
+  if (hexMatches.length >= 3) {
+    const sorted = [...hexMatches].sort((a, b) => relativeLuminance(a) - relativeLuminance(b));
+    const darkest = sorted[0];
+    const lightest = sorted[sorted.length - 1];
+    const accent = sorted.slice(1, -1)[0] || hexMatches[0] || DEFAULT_COLORS.green;
+    const textOnAccent = relativeLuminance(accent) > 0.5 ? darkest : lightest;
+    // Always guaranteed light — used for text over the dark photo-overlay
+    // scrim, which is dark by construction regardless of brand palette.
+    return { green: accent, cream: lightest, white: textOnAccent, text: darkest, lightText: lightest };
+  }
+
   return {
     green: hexMatches[0] || DEFAULT_COLORS.green,
     cream: hexMatches[1] || DEFAULT_COLORS.cream,
     white: DEFAULT_COLORS.white,
     text: DEFAULT_COLORS.text,
+    lightText: DEFAULT_COLORS.white,
   };
 }
 
@@ -54,7 +79,32 @@ type PhotoUrls = {
   photo_after_url: string | null;
 };
 
-function renderBlock(block: Block, key: number, photos: PhotoUrls, colors: Colors) {
+function hexToRgba(hex: string, alpha: number): string {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+type RenderOptions = {
+  // True when this block sits over the photo-overlay scrim — body-ish text
+  // needs a guaranteed-light colour instead of the brand's normal (often
+  // dark) text colour, since the scrim underneath is always dark.
+  onDark?: boolean;
+  // True when the layout places the photo itself (photo_overlay, split) —
+  // photo_split/photo_single blocks are skipped rather than double-rendered.
+  skipPhotoBlocks?: boolean;
+};
+
+function renderBlock(
+  block: Block,
+  key: number,
+  photos: PhotoUrls,
+  colors: Colors,
+  options: RenderOptions = {}
+) {
+  const bodyColor = options.onDark ? colors.lightText : colors.text;
+
   switch (block.type) {
     case "badge":
       return (
@@ -65,7 +115,7 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls, colors: Color
             alignItems: "center",
             padding: "10px 22px",
             borderRadius: "999px",
-            background: "rgba(45,59,46,0.08)",
+            background: options.onDark ? "rgba(0,0,0,0.4)" : hexToRgba(colors.text, 0.08),
             color: colors.green,
             fontSize: 22,
             fontWeight: 700,
@@ -119,7 +169,7 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls, colors: Color
             display: "flex",
             fontSize: 40,
             fontStyle: "italic",
-            color: colors.text,
+            color: bodyColor,
             lineHeight: 1.3,
           }}
         >
@@ -129,10 +179,7 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls, colors: Color
 
     case "body_text":
       return (
-        <div
-          key={key}
-          style={{ display: "flex", fontSize: 30, color: colors.text, lineHeight: 1.4 }}
-        >
+        <div key={key} style={{ display: "flex", fontSize: 30, color: bodyColor, lineHeight: 1.4 }}>
           {block.text}
         </div>
       );
@@ -153,11 +200,12 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls, colors: Color
           <div style={{ display: "flex", fontSize: 84, fontWeight: 900, color: colors.green }}>
             {block.stat}
           </div>
-          <div style={{ display: "flex", fontSize: 24, color: colors.text }}>{block.label}</div>
+          <div style={{ display: "flex", fontSize: 24, color: bodyColor }}>{block.label}</div>
         </div>
       );
 
     case "photo_split": {
+      if (options.skipPhotoBlocks) return null;
       const hasPhotos = photos.photo_before_url && photos.photo_after_url;
       return (
         <div
@@ -168,15 +216,11 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls, colors: Color
             <>
               <img
                 src={photos.photo_before_url as string}
-                width={SPLIT_HALF_WIDTH}
-                height={PHOTO_HEIGHT}
-                style={{ objectFit: "cover" }}
+                style={{ display: "flex", width: SPLIT_HALF_WIDTH, height: PHOTO_HEIGHT, objectFit: "cover" }}
               />
               <img
                 src={photos.photo_after_url as string}
-                width={SPLIT_HALF_WIDTH}
-                height={PHOTO_HEIGHT}
-                style={{ objectFit: "cover" }}
+                style={{ display: "flex", width: SPLIT_HALF_WIDTH, height: PHOTO_HEIGHT, objectFit: "cover" }}
               />
             </>
           ) : (
@@ -200,15 +244,14 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls, colors: Color
     }
 
     case "photo_single": {
+      if (options.skipPhotoBlocks) return null;
       const photoUrl = photos.photo_url || photos.photo_after_url;
       return (
         <div key={key} style={{ display: "flex", width: CONTENT_WIDTH, height: PHOTO_HEIGHT }}>
           {photoUrl ? (
             <img
               src={photoUrl}
-              width={CONTENT_WIDTH}
-              height={PHOTO_HEIGHT}
-              style={{ objectFit: "cover" }}
+              style={{ display: "flex", width: CONTENT_WIDTH, height: PHOTO_HEIGHT, objectFit: "cover" }}
             />
           ) : (
             <div
@@ -255,6 +298,145 @@ function renderBlock(block: Block, key: number, photos: PhotoUrls, colors: Color
   }
 }
 
+function buildStackedCanvas(blocks: Block[], photos: PhotoUrls, colors: Colors) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: `${CANVAS_WIDTH}px`,
+        height: `${CANVAS_WIDTH}px`,
+        background: colors.cream,
+        padding: `${CANVAS_PADDING}px`,
+        gap: "28px",
+      }}
+    >
+      {blocks.map((block, i) => renderBlock(block, i, photos, colors))}
+    </div>
+  );
+}
+
+function buildPhotoOverlayCanvas(blocks: Block[], photos: PhotoUrls, colors: Colors, photoUrl: string) {
+  const contentBlocks = blocks.filter((b) => b.type !== "photo_split" && b.type !== "photo_single");
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: `${CANVAS_WIDTH}px`,
+        height: `${CANVAS_WIDTH}px`,
+        position: "relative",
+        background: colors.cream,
+      }}
+    >
+      <img
+        src={photoUrl}
+        style={{
+          display: "flex",
+          position: "absolute",
+          top: 0,
+          left: 0,
+          width: CANVAS_WIDTH,
+          height: CANVAS_WIDTH,
+          objectFit: "cover",
+        }}
+      />
+      <div
+        style={{
+          display: "flex",
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          height: "62%",
+          background: "linear-gradient(to top, rgba(0,0,0,0.85), rgba(0,0,0,0))",
+        }}
+      />
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          position: "absolute",
+          left: 0,
+          right: 0,
+          bottom: 0,
+          padding: `${CANVAS_PADDING}px`,
+          gap: "20px",
+        }}
+      >
+        {contentBlocks.map((block, i) => renderBlock(block, i, photos, colors, { onDark: true, skipPhotoBlocks: true }))}
+      </div>
+    </div>
+  );
+}
+
+function buildSplitCanvas(blocks: Block[], photos: PhotoUrls, colors: Colors) {
+  const contentBlocks = blocks.filter((b) => b.type !== "photo_split" && b.type !== "photo_single");
+  const panelWidth = Math.round(CANVAS_WIDTH * 0.44);
+  const photoWidth = CANVAS_WIDTH - panelWidth;
+  const hasBeforeAfter = photos.photo_before_url && photos.photo_after_url;
+  const singlePhotoUrl = photos.photo_url || photos.photo_after_url || photos.photo_before_url;
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "row",
+        width: `${CANVAS_WIDTH}px`,
+        height: `${CANVAS_WIDTH}px`,
+        background: colors.cream,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          width: panelWidth,
+          height: CANVAS_WIDTH,
+          padding: `${CANVAS_PADDING}px`,
+          gap: "20px",
+        }}
+      >
+        {contentBlocks.map((block, i) => renderBlock(block, i, photos, colors, { skipPhotoBlocks: true }))}
+      </div>
+      {hasBeforeAfter ? (
+        // A bare <> Fragment as one branch of this ternary caused Satori to
+        // only render the first of its two children — wrapping in a real
+        // <div> (matching the single-photo branch's own element) fixes it.
+        <div style={{ display: "flex", flexDirection: "column", width: photoWidth, height: CANVAS_WIDTH }}>
+          <img
+            src={photos.photo_before_url as string}
+            style={{
+              display: "flex",
+              width: photoWidth,
+              height: CANVAS_WIDTH / 2,
+              flexShrink: 0,
+              flexGrow: 0,
+              objectFit: "cover",
+            }}
+          />
+          <img
+            src={photos.photo_after_url as string}
+            style={{
+              display: "flex",
+              width: photoWidth,
+              height: CANVAS_WIDTH / 2,
+              flexShrink: 0,
+              flexGrow: 0,
+              objectFit: "cover",
+            }}
+          />
+        </div>
+      ) : (
+        <img
+          src={singlePhotoUrl as string}
+          style={{ display: "flex", width: photoWidth, height: CANVAS_WIDTH, objectFit: "cover" }}
+        />
+      )}
+    </div>
+  );
+}
+
 export async function POST(request: Request) {
   try {
     const { id } = await request.json();
@@ -299,24 +481,24 @@ export async function POST(request: Request) {
       .maybeSingle();
     const colors = resolveColors(companyProfile?.brand_colours);
 
-    const imageResponse = new ImageResponse(
-      (
-        <div
-          style={{
-            display: "flex",
-            flexDirection: "column",
-            width: `${CANVAS_WIDTH}px`,
-            height: `${CANVAS_WIDTH}px`,
-            background: colors.cream,
-            padding: `${CANVAS_PADDING}px`,
-            gap: "28px",
-          }}
-        >
-          {blocks.map((block, i) => renderBlock(block, i, photos, colors))}
-        </div>
-      ),
-      { width: CANVAS_WIDTH, height: CANVAS_WIDTH }
-    );
+    // generated_design_notes is repurposed to store the layout key chosen
+    // in /api/generate-design. Null (rows generated before this existed)
+    // falls back to "stacked", the original single-composition behaviour.
+    const overlayPhotoUrl = photos.photo_url || photos.photo_after_url || photos.photo_before_url;
+    const hasAnyPhoto = Boolean(overlayPhotoUrl);
+    let layout = designRequest.generated_design_notes || "stacked";
+    if ((layout === "photo_overlay" || layout === "split") && !hasAnyPhoto) {
+      layout = "stacked";
+    }
+
+    const canvas =
+      layout === "photo_overlay"
+        ? buildPhotoOverlayCanvas(blocks, photos, colors, overlayPhotoUrl as string)
+        : layout === "split"
+        ? buildSplitCanvas(blocks, photos, colors)
+        : buildStackedCanvas(blocks, photos, colors);
+
+    const imageResponse = new ImageResponse(canvas, { width: CANVAS_WIDTH, height: CANVAS_WIDTH });
 
     const arrayBuffer = await imageResponse.arrayBuffer();
     const fileName = `rendered-${id}-${Date.now()}.png`;

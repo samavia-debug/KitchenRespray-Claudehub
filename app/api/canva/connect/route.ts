@@ -41,16 +41,21 @@ export async function GET(request: NextRequest) {
 
   const response = NextResponse.redirect(authUrl.toString());
 
+  // 30 minutes, not 10 — a first-time connect often involves the user
+  // setting up Canva MFA or finding their login mid-flow, which can easily
+  // run past a tight window and made the callback fail with missing_params.
   response.cookies.set("canva_code_verifier", codeVerifier, {
     httpOnly: true,
     secure: true,
-    maxAge: 600,
+    sameSite: "lax",
+    maxAge: 1800,
     path: "/",
   });
   response.cookies.set("canva_state", state, {
     httpOnly: true,
     secure: true,
-    maxAge: 600,
+    sameSite: "lax",
+    maxAge: 1800,
     path: "/",
   });
 
