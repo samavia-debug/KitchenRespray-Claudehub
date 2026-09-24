@@ -94,6 +94,9 @@ type RenderOptions = {
   // True when the layout places the photo itself (photo_overlay, split) —
   // photo_split/photo_single blocks are skipped rather than double-rendered.
   skipPhotoBlocks?: boolean;
+  // True for the quote_hero layout — centers text blocks instead of the
+  // default left alignment.
+  centered?: boolean;
 };
 
 function renderBlock(
@@ -151,10 +154,11 @@ function renderBlock(
           key={key}
           style={{
             display: "flex",
-            fontSize: 58,
+            fontSize: options.centered ? 50 : 58,
             fontWeight: 800,
             color: colors.green,
             lineHeight: 1.15,
+            textAlign: options.centered ? "center" : "left",
           }}
         >
           {block.text}
@@ -167,10 +171,11 @@ function renderBlock(
           key={key}
           style={{
             display: "flex",
-            fontSize: 40,
+            fontSize: options.centered ? 46 : 40,
             fontStyle: "italic",
             color: bodyColor,
-            lineHeight: 1.3,
+            lineHeight: 1.35,
+            textAlign: options.centered ? "center" : "left",
           }}
         >
           {block.text}
@@ -179,7 +184,16 @@ function renderBlock(
 
     case "body_text":
       return (
-        <div key={key} style={{ display: "flex", fontSize: 30, color: bodyColor, lineHeight: 1.4 }}>
+        <div
+          key={key}
+          style={{
+            display: "flex",
+            fontSize: 30,
+            color: bodyColor,
+            lineHeight: 1.4,
+            textAlign: options.centered ? "center" : "left",
+          }}
+        >
           {block.text}
         </div>
       );
@@ -188,7 +202,13 @@ function renderBlock(
       return (
         <div
           key={key}
-          style={{ display: "flex", fontSize: 26, fontWeight: 700, color: colors.green }}
+          style={{
+            display: "flex",
+            fontSize: 26,
+            fontWeight: 700,
+            color: colors.green,
+            textAlign: options.centered ? "center" : "left",
+          }}
         >
           {block.text}
         </div>
@@ -196,11 +216,16 @@ function renderBlock(
 
     case "stat_highlight":
       return (
-        <div key={key} style={{ display: "flex", flexDirection: "column" }}>
+        <div
+          key={key}
+          style={{ display: "flex", flexDirection: "column", alignItems: options.centered ? "center" : "flex-start" }}
+        >
           <div style={{ display: "flex", fontSize: 84, fontWeight: 900, color: colors.green }}>
             {block.stat}
           </div>
-          <div style={{ display: "flex", fontSize: 24, color: bodyColor }}>{block.label}</div>
+          <div style={{ display: "flex", fontSize: 24, color: bodyColor, textAlign: options.centered ? "center" : "left" }}>
+            {block.label}
+          </div>
         </div>
       );
 
@@ -216,11 +241,23 @@ function renderBlock(
             <>
               <img
                 src={photos.photo_before_url as string}
-                style={{ display: "flex", width: SPLIT_HALF_WIDTH, height: PHOTO_HEIGHT, objectFit: "cover" }}
+                style={{
+                  display: "flex",
+                  width: SPLIT_HALF_WIDTH,
+                  height: PHOTO_HEIGHT,
+                  objectFit: "cover",
+                  borderRadius: 16,
+                }}
               />
               <img
                 src={photos.photo_after_url as string}
-                style={{ display: "flex", width: SPLIT_HALF_WIDTH, height: PHOTO_HEIGHT, objectFit: "cover" }}
+                style={{
+                  display: "flex",
+                  width: SPLIT_HALF_WIDTH,
+                  height: PHOTO_HEIGHT,
+                  objectFit: "cover",
+                  borderRadius: 16,
+                }}
               />
             </>
           ) : (
@@ -251,7 +288,13 @@ function renderBlock(
           {photoUrl ? (
             <img
               src={photoUrl}
-              style={{ display: "flex", width: CONTENT_WIDTH, height: PHOTO_HEIGHT, objectFit: "cover" }}
+              style={{
+                display: "flex",
+                width: CONTENT_WIDTH,
+                height: PHOTO_HEIGHT,
+                objectFit: "cover",
+                borderRadius: 16,
+              }}
             />
           ) : (
             <div
@@ -312,6 +355,57 @@ function buildStackedCanvas(blocks: Block[], photos: PhotoUrls, colors: Colors) 
       }}
     >
       {blocks.map((block, i) => renderBlock(block, i, photos, colors))}
+    </div>
+  );
+}
+
+function buildDarkStackedCanvas(blocks: Block[], photos: PhotoUrls, colors: Colors) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: `${CANVAS_WIDTH}px`,
+        height: `${CANVAS_WIDTH}px`,
+        background: colors.text,
+        padding: `${CANVAS_PADDING}px`,
+        gap: "28px",
+      }}
+    >
+      {blocks.map((block, i) => renderBlock(block, i, photos, colors, { onDark: true }))}
+    </div>
+  );
+}
+
+function buildQuoteHeroCanvas(blocks: Block[], colors: Colors) {
+  const contentBlocks = blocks.filter((b) => b.type !== "photo_split" && b.type !== "photo_single");
+  const footer = contentBlocks.find((b) => b.type === "cta_footer");
+  const rest = contentBlocks.filter((b) => b.type !== "cta_footer");
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        flexDirection: "column",
+        width: `${CANVAS_WIDTH}px`,
+        height: `${CANVAS_WIDTH}px`,
+        background: colors.cream,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          flexGrow: 1,
+          padding: `${CANVAS_PADDING + 20}px`,
+          gap: "26px",
+        }}
+      >
+        {rest.map((block, i) => renderBlock(block, i, { photo_url: null, photo_before_url: null, photo_after_url: null }, colors, { centered: true, skipPhotoBlocks: true }))}
+      </div>
+      {footer && renderBlock(footer, rest.length, { photo_url: null, photo_before_url: null, photo_after_url: null }, colors)}
     </div>
   );
 }
@@ -496,6 +590,10 @@ export async function POST(request: Request) {
         ? buildPhotoOverlayCanvas(blocks, photos, colors, overlayPhotoUrl as string)
         : layout === "split"
         ? buildSplitCanvas(blocks, photos, colors)
+        : layout === "dark_stacked"
+        ? buildDarkStackedCanvas(blocks, photos, colors)
+        : layout === "quote_hero"
+        ? buildQuoteHeroCanvas(blocks, colors)
         : buildStackedCanvas(blocks, photos, colors);
 
     const imageResponse = new ImageResponse(canvas, { width: CANVAS_WIDTH, height: CANVAS_WIDTH });

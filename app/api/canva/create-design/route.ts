@@ -9,6 +9,7 @@ import { getValidCanvaAccessToken } from "@/lib/canva/token";
 // "BRAND — Social — Before & After" template.
 const templateMap: Record<string, string> = {
   "Before & After": "DAHT4XnKvXM",
+  "Project Showcase": "DAHT4dSxd58",
   "Showroom": "DAHUyAaVGTo",
   "Promotional": "DAHUyE2L7RM",
 };

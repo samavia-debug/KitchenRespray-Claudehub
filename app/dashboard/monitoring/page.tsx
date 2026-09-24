@@ -8,7 +8,7 @@ import SummaryCards from "./summary-cards";
 import WebsiteGrid from "./website-grid";
 import AddWebsiteForm from "./add-website-form";
 import AlertsPanel from "./alerts-panel";
-import NotConnectedCard from "./not-connected-card";
+import TrafficSummary from "./traffic-summary";
 import MorningSummary from "./morning-summary";
 
 const RECENT_INCIDENT_WINDOW_HOURS = 48;
@@ -121,10 +121,7 @@ export default function MonitoringCommandCentre() {
 
       <SummaryCards websites={websites} />
 
-      <div className="grid-2" style={{ marginBottom: "1.25rem" }}>
-        <NotConnectedCard title="Traffic & conversions" phaseNote="arrives with Google Analytics (Phase 3) and lead tracking (Phase 6)." />
-        <NotConnectedCard title="Organic traffic trend" phaseNote="arrives with Google Search Console (Phase 4)." />
-      </div>
+      <TrafficSummary canManage={canManage} />
 
       <AlertsPanel websites={websites} />
 

@@ -11,7 +11,19 @@ const LAYOUTS = [
     key: "stacked",
     label: "Stacked Card",
     guidance:
-      "A single vertical card on a plain background: badge, one photo area, headline, body copy, CTA footer stacked top to bottom. Safe and clean, works for any post type. Best when there's a lot of text to fit (testimonials, educational content) or when no strong single photo is available.",
+      "A single vertical card on a plain light background: badge, one photo area, headline, body copy, CTA footer stacked top to bottom. Safe and clean, works for any post type. Best when there's a lot of text to fit (educational content) or when no strong single photo is available.",
+  },
+  {
+    key: "dark_stacked",
+    label: "Dark Stacked Card",
+    guidance:
+      "Same vertical stacked composition as Stacked Card, but inverted to a bold dark background with light text and a bright accent headline. Best for a confident, high-impact statement — promotional offers, brand-awareness posts, a strong claim or stat. Gives real visual contrast against the (much more common) light layouts. Does not require a photo.",
+  },
+  {
+    key: "quote_hero",
+    label: "Quote Hero",
+    guidance:
+      "Everything centered on a plain light background: badge, stars, a large centered pull-quote, author line, CTA footer. Built specifically for customer reviews/testimonials — do not use for anything else. Does not require a photo (and won't show one even if blocks include a photo block).",
   },
   {
     key: "photo_overlay",

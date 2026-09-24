@@ -37,7 +37,11 @@ export async function GET(request: NextRequest) {
   const authUrl = buildAuthorizeUrl({ service, redirectUri, state });
 
   const response = NextResponse.redirect(authUrl);
-  const cookieOpts = { httpOnly: true, secure: true, maxAge: 600, path: "/" } as const;
+  // 30 minutes, not 10 — the same missing_params failure mode hit on the
+  // Canva connect flow (a first-time OAuth grant often runs long, e.g.
+  // clicking through Google's "unverified app" warning screen) applies
+  // here too.
+  const cookieOpts = { httpOnly: true, secure: true, sameSite: "lax", maxAge: 1800, path: "/" } as const;
   response.cookies.set("google_oauth_state", state, cookieOpts);
   response.cookies.set("google_oauth_website_id", websiteId, cookieOpts);
   response.cookies.set("google_oauth_service", service, cookieOpts);
