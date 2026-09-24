@@ -27,9 +27,21 @@ export default function ClaudeAnalysisPage() {
   const supabase = createClient();
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [canManage, setCanManage] = useState(false);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
 
   const load = useCallback(async () => {
     setError(null);
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+      setCanManage(profile?.role === "Admin" || profile?.role === "Manager");
+    }
+
     const [{ data: websites, error: websitesError }, { data: analyses }] = await Promise.all([
       supabase.from("websites").select("id, name, domain, priority").order("name", { ascending: true }),
       supabase.from("claude_analyses").select("website_id, analysis, created_at"),
@@ -67,6 +79,33 @@ export default function ClaudeAnalysisPage() {
   useEffect(() => {
     load();
   }, [load]);
+
+  async function analyze(websiteId: string) {
+    setAnalyzingId(websiteId);
+    setError(null);
+    try {
+      const res = await fetch(`/api/monitoring/websites/${websiteId}/analyze`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error || "Analysis failed");
+      } else {
+        await load();
+        setExpandedIds((prev) => new Set(prev).add(websiteId));
+      }
+    } catch (err: any) {
+      setError(err.message);
+    }
+    setAnalyzingId(null);
+  }
+
+  function toggleExpanded(websiteId: string) {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(websiteId)) next.delete(websiteId);
+      else next.add(websiteId);
+      return next;
+    });
+  }
 
   if (error) {
     return (
@@ -125,24 +164,74 @@ export default function ClaudeAnalysisPage() {
 
       <div className="card">
         <h2>All sites</h2>
-        {rows.map((r) => (
-          <div key={r.website_id} style={{ padding: "0.85rem 0", borderBottom: "1px solid var(--border)" }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "0.5rem" }}>
-              <div>
-                <Link href={`/dashboard/monitoring/${r.website_id}`} style={{ fontWeight: 600 }}>
-                  {r.name}
-                </Link>
-                <span style={{ color: "var(--muted)", fontSize: "0.85rem", marginLeft: "0.5rem" }}>{r.domain}</span>
+        {rows.map((r) => {
+          const isExpanded = expandedIds.has(r.website_id);
+          return (
+            <div key={r.website_id} style={{ padding: "0.85rem 0", borderBottom: "1px solid var(--border)" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: "0.5rem" }}>
+                <div>
+                  <Link href={`/dashboard/monitoring/${r.website_id}`} style={{ fontWeight: 600 }}>
+                    {r.name}
+                  </Link>
+                  <span style={{ color: "var(--muted)", fontSize: "0.85rem", marginLeft: "0.5rem" }}>{r.domain}</span>
+                </div>
+                <div style={{ display: "flex", alignItems: "center", gap: "0.75rem" }}>
+                  <span style={{ color: r.created_at ? "var(--muted)" : "#b98900", fontSize: "0.85rem", fontWeight: r.created_at ? undefined : 600 }}>
+                    {formatDate(r.created_at)}
+                  </span>
+                  {canManage && (
+                    <button
+                      className={r.created_at ? "btn-secondary btn" : "btn"}
+                      style={{ fontSize: "0.8rem", padding: "0.35rem 0.7rem" }}
+                      onClick={() => analyze(r.website_id)}
+                      disabled={analyzingId === r.website_id}
+                    >
+                      {analyzingId === r.website_id ? "Analysing..." : r.created_at ? "Re-analyse" : "Analyse"}
+                    </button>
+                  )}
+                </div>
               </div>
-              <span style={{ color: r.created_at ? "var(--muted)" : "#b98900", fontSize: "0.85rem", fontWeight: r.created_at ? undefined : 600 }}>
-                {formatDate(r.created_at)}
-              </span>
+
+              {r.analysis && !isExpanded && (
+                <p style={{ fontSize: "0.88rem", color: "var(--muted)", margin: "0.4rem 0 0" }}>{excerpt(r.analysis)}</p>
+              )}
+
+              {r.analysis && isExpanded && (
+                <div
+                  style={{
+                    whiteSpace: "pre-wrap",
+                    fontSize: "0.9rem",
+                    lineHeight: 1.6,
+                    background: "var(--paper)",
+                    border: "1px solid var(--border)",
+                    borderRadius: "8px",
+                    padding: "0.85rem",
+                    margin: "0.5rem 0 0",
+                  }}
+                >
+                  {r.analysis}
+                </div>
+              )}
+
+              {r.analysis && (
+                <button
+                  onClick={() => toggleExpanded(r.website_id)}
+                  style={{
+                    background: "none",
+                    border: "none",
+                    color: "var(--accent)",
+                    fontSize: "0.82rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    padding: "0.4rem 0 0",
+                  }}
+                >
+                  {isExpanded ? "Hide full analysis" : "View full analysis"}
+                </button>
+              )}
             </div>
-            {r.analysis && (
-              <p style={{ fontSize: "0.88rem", color: "var(--muted)", margin: "0.4rem 0 0" }}>{excerpt(r.analysis)}</p>
-            )}
-          </div>
-        ))}
+          );
+        })}
         {rows.length === 0 && <p style={{ color: "var(--muted)" }}>No websites yet.</p>}
       </div>
     </>

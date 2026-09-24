@@ -7,7 +7,6 @@ import { createClient } from "@/lib/supabase/client";
 
 const comingSoon = [
   "Social Media",
-  "Leads",
   "Connecteam",
   "Knowledge Base",
 ];
@@ -46,6 +45,7 @@ export default function SidebarNav() {
     { href: "/dashboard", label: "Overview" },
     { href: "/dashboard/monitoring", label: "Monitoring" },
     { href: "/dashboard/analytics", label: "Analytics" },
+    { href: "/dashboard/leads", label: "Leads" },
     { href: "/dashboard/claude-analysis", label: "Claude Analysis" },
     { href: "/dashboard/incidents", label: "Incidents" },
     { href: "/dashboard/claude-design", label: "Claude Design" },
