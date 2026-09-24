@@ -3,6 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { sum, percentChange, sinceDaysAgo, splitLastNDays } from "@/lib/monitoring/aggregate";
+import ChangeBadge from "../monitoring/change-badge";
 
 type Row = {
   website_id: string;
@@ -13,27 +15,6 @@ type Row = {
   hasData: boolean;
 };
 
-function sum(values: (number | null)[]): number {
-  return values.reduce((total: number, v) => total + (v || 0), 0);
-}
-
-function percentChange(current: number, previous: number): number | null {
-  if (previous === 0) return current === 0 ? 0 : null;
-  return ((current - previous) / previous) * 100;
-}
-
-function ChangeBadge({ value }: { value: number | null }) {
-  if (value === null) return null;
-  const rounded = Math.round(value);
-  const color = rounded > 0 ? "#2e7d32" : rounded < 0 ? "#b3261e" : "var(--muted)";
-  const arrow = rounded > 0 ? "↑" : rounded < 0 ? "↓" : "→";
-  return (
-    <span style={{ fontSize: "0.8rem", fontWeight: 600, color, marginLeft: "0.4rem" }}>
-      {arrow} {Math.abs(rounded)}%
-    </span>
-  );
-}
-
 export default function LeadsPage() {
   const supabase = createClient();
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -41,12 +22,11 @@ export default function LeadsPage() {
 
   const load = useCallback(async () => {
     setError(null);
-    const since14 = new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10);
-    const since7 = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+    const since = sinceDaysAgo(13);
 
     const [{ data: websites, error: websitesError }, { data: am }] = await Promise.all([
       supabase.from("websites").select("id, name, domain").order("name", { ascending: true }),
-      supabase.from("analytics_metrics").select("website_id, date, conversions").gte("date", since14),
+      supabase.from("analytics_metrics").select("website_id, date, conversions").gte("date", since),
     ]);
 
     if (websitesError) {
@@ -63,14 +43,13 @@ export default function LeadsPage() {
 
     const merged: Row[] = (websites || []).map((w: any) => {
       const wRows = byWebsite.get(w.id) || [];
-      const last7 = wRows.filter((r: any) => r.date >= since7);
-      const prev7 = wRows.filter((r: any) => r.date < since7);
+      const { current, previous } = splitLastNDays(wRows, 7);
       return {
         website_id: w.id,
         name: w.name,
         domain: w.domain,
-        conversions7d: sum(last7.map((r: any) => r.conversions)),
-        conversionsPrev7d: sum(prev7.map((r: any) => r.conversions)),
+        conversions7d: sum(current.map((r: any) => r.conversions)),
+        conversionsPrev7d: sum(previous.map((r: any) => r.conversions)),
         // Connected/synced iff any analytics_metrics rows exist at all —
         // NOT conversions > 0, since a site with real zero leads is exactly
         // what this page should surface, not hide as "not connected".

@@ -10,7 +10,7 @@ const DEFAULT_COLORS = {
   text: "#2a2a2a",
 };
 
-type Colors = typeof DEFAULT_COLORS & { lightText: string };
+type Colors = typeof DEFAULT_COLORS & { lightText: string; accentOnDark: string };
 
 function relativeLuminance(hex: string): number {
   const r = parseInt(hex.slice(1, 3), 16) / 255;
@@ -42,15 +42,23 @@ function resolveColors(brandColours: string | null | undefined): Colors {
     const textOnAccent = relativeLuminance(accent) > 0.5 ? darkest : lightest;
     // Always guaranteed light — used for text over the dark photo-overlay
     // scrim, which is dark by construction regardless of brand palette.
-    return { green: accent, cream: lightest, white: textOnAccent, text: darkest, lightText: lightest };
+    // accentOnDark: the accent itself is already luminance-picked as the
+    // brand's bright/distinctive colour, so it reads fine on the new dark
+    // layouts (dark_stacked, photo_overlay) as-is.
+    return { green: accent, cream: lightest, white: textOnAccent, text: darkest, lightText: lightest, accentOnDark: accent };
   }
 
+  // Fallback palette's "green" (#2d3b2e) is a dark colour chosen to sit on
+  // a light "cream" background — using it as-is for accent text on the new
+  // dark layouts would be near-invisible (dark green on near-black), so
+  // accentOnDark substitutes a guaranteed-light colour there instead.
   return {
     green: hexMatches[0] || DEFAULT_COLORS.green,
     cream: hexMatches[1] || DEFAULT_COLORS.cream,
     white: DEFAULT_COLORS.white,
     text: DEFAULT_COLORS.text,
     lightText: DEFAULT_COLORS.white,
+    accentOnDark: DEFAULT_COLORS.white,
   };
 }
 
@@ -107,6 +115,12 @@ function renderBlock(
   options: RenderOptions = {}
 ) {
   const bodyColor = options.onDark ? colors.lightText : colors.text;
+  // colors.green is the brand accent, luminance-chosen to read well on
+  // dark backgrounds when 3+ brand colours are set — but the <3-colour
+  // fallback's "green" is a dark colour meant for a light background, and
+  // is nearly invisible on the new dark layouts. accentOnDark substitutes
+  // a guaranteed-light colour there; see resolveColors.
+  const accentColor = options.onDark ? colors.accentOnDark : colors.green;
 
   switch (block.type) {
     case "badge":
@@ -119,7 +133,7 @@ function renderBlock(
             padding: "10px 22px",
             borderRadius: "999px",
             background: options.onDark ? "rgba(0,0,0,0.4)" : hexToRgba(colors.text, 0.08),
-            color: colors.green,
+            color: accentColor,
             fontSize: 22,
             fontWeight: 700,
             letterSpacing: 1,
@@ -139,7 +153,7 @@ function renderBlock(
                 display: "flex",
                 width: 34,
                 height: 34,
-                background: colors.green,
+                background: accentColor,
                 clipPath:
                   "polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)",
               }}
@@ -156,7 +170,7 @@ function renderBlock(
             display: "flex",
             fontSize: options.centered ? 50 : 58,
             fontWeight: 800,
-            color: colors.green,
+            color: accentColor,
             lineHeight: 1.15,
             textAlign: options.centered ? "center" : "left",
           }}
@@ -206,7 +220,7 @@ function renderBlock(
             display: "flex",
             fontSize: 26,
             fontWeight: 700,
-            color: colors.green,
+            color: accentColor,
             textAlign: options.centered ? "center" : "left",
           }}
         >
@@ -220,7 +234,7 @@ function renderBlock(
           key={key}
           style={{ display: "flex", flexDirection: "column", alignItems: options.centered ? "center" : "flex-start" }}
         >
-          <div style={{ display: "flex", fontSize: 84, fontWeight: 900, color: colors.green }}>
+          <div style={{ display: "flex", fontSize: 84, fontWeight: 900, color: accentColor }}>
             {block.stat}
           </div>
           <div style={{ display: "flex", fontSize: 24, color: bodyColor, textAlign: options.centered ? "center" : "left" }}>
@@ -405,7 +419,10 @@ function buildQuoteHeroCanvas(blocks: Block[], colors: Colors) {
       >
         {rest.map((block, i) => renderBlock(block, i, { photo_url: null, photo_before_url: null, photo_after_url: null }, colors, { centered: true, skipPhotoBlocks: true }))}
       </div>
-      {footer && renderBlock(footer, rest.length, { photo_url: null, photo_before_url: null, photo_after_url: null }, colors)}
+      {footer &&
+        renderBlock(footer, rest.length, { photo_url: null, photo_before_url: null, photo_after_url: null }, colors, {
+          centered: true,
+        })}
     </div>
   );
 }

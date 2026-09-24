@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { runAndRecordCheck } from "@/lib/monitoring/record";
 import { syncGoogleConnections } from "@/lib/google/sync";
+import { notifySlack, notifyWhatsApp } from "@/lib/monitoring/notify";
 
 const CONCURRENCY = 5;
 
@@ -9,6 +10,13 @@ const CONCURRENCY = 5;
 // a Google sync pass in the same invocation, on the roughly-daily tick
 // where connections are stale.
 export const maxDuration = 60;
+const MAX_DURATION_MS = maxDuration * 1000;
+// Skip the Google sync pass entirely (rather than starting it and risking
+// a mid-batch cutoff) once less than this much of the budget remains after
+// health checks — the per-connection staleness filter means whatever gets
+// skipped is simply picked up on a later tick, so skipping cleanly here is
+// strictly better than starting a sync that has no real chance to finish.
+const MIN_SYNC_BUDGET_MS = 15_000;
 
 function isAuthorized(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -29,6 +37,7 @@ async function runCron(request: NextRequest) {
     return NextResponse.json({ error: "Not authorized" }, { status: 401 });
   }
 
+  const cronStart = Date.now();
   const service = createServiceClient();
   const { data: websites, error } = await service
     .from("websites")
@@ -80,15 +89,32 @@ async function runCron(request: NextRequest) {
   // "last sync" check, so a run cut short by a function timeout partway
   // through 50+ connections doesn't leave the rest stuck stale for a full
   // day — whatever didn't get reached is still stale next tick.
-  let googleSync: { synced: number; failed: number; error?: string };
-  try {
-    const syncResults = await syncGoogleConnections(undefined, { onlyStaleHours: 20 });
-    googleSync = {
-      synced: syncResults.filter((r) => r.ok).length,
-      failed: syncResults.filter((r) => !r.ok).length,
-    };
-  } catch (err: any) {
-    googleSync = { synced: 0, failed: 0, error: err.message };
+  let googleSync: { synced: number; failed: number; error?: string; skipped?: boolean };
+  const timeRemainingMs = MAX_DURATION_MS - (Date.now() - cronStart);
+
+  if (timeRemainingMs < MIN_SYNC_BUDGET_MS) {
+    googleSync = { synced: 0, failed: 0, skipped: true };
+  } else {
+    try {
+      const syncResults = await syncGoogleConnections(undefined, { onlyStaleHours: 20 });
+      const synced = syncResults.filter((r) => r.ok).length;
+      const failed = syncResults.filter((r) => !r.ok).length;
+      googleSync = { synced, failed };
+
+      // A total outage (every attempted connection failed, e.g. Google's
+      // OAuth endpoint down or every token revoked at once) is exactly the
+      // kind of thing that should surface the same way a website incident
+      // does — otherwise it's invisible until someone happens to notice
+      // stale numbers on the dashboard days later.
+      if (syncResults.length > 0 && failed === syncResults.length) {
+        const message = `🔴 *Google sync failing* — all ${failed} connection(s) attempted this run failed. Analytics/Search Console data is not updating.`;
+        await Promise.all([notifySlack(message), notifyWhatsApp(message)]);
+      }
+    } catch (err: any) {
+      googleSync = { synced: 0, failed: 0, error: err.message };
+      const message = `🔴 *Google sync failed* — ${err.message}. Analytics/Search Console data is not updating.`;
+      await Promise.all([notifySlack(message), notifyWhatsApp(message)]);
+    }
   }
 
   return NextResponse.json({

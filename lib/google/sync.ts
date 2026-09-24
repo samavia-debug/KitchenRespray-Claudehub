@@ -23,16 +23,22 @@ export type SyncResult = { website_id: string; service: string; ok: boolean; day
  * for today" just because one connection near the front succeeded.
  * Manual syncs (websiteId set, or no staleness filter) always run
  * regardless of freshness — the user explicitly asked for a fresh pull.
+ *
+ * `service`, when set alongside `websiteId`, scopes the sync to just that
+ * one service — a per-service "Sync now" button should only touch the
+ * connection it was clicked from, not silently also re-sync the site's
+ * other Google connection.
  */
 export async function syncGoogleConnections(
   websiteId?: string,
-  options?: { onlyStaleHours?: number }
+  options?: { onlyStaleHours?: number; service?: string }
 ): Promise<SyncResult[]> {
   const supabase = createServiceClient();
 
   let query = supabase.from("google_connections").select("website_id, service, property_id, site_url, last_synced_at");
   if (websiteId) {
     query = query.eq("website_id", websiteId);
+    if (options?.service) query = query.eq("service", options.service);
   } else if (options?.onlyStaleHours !== undefined) {
     const cutoff = new Date(Date.now() - options.onlyStaleHours * 3_600_000).toISOString();
     query = query.or(`last_synced_at.is.null,last_synced_at.lt.${cutoff}`);

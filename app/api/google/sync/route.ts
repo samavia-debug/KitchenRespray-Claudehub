@@ -14,9 +14,10 @@ export async function POST(request: NextRequest) {
   if ("error" in auth) return auth.error;
 
   const websiteId = request.nextUrl.searchParams.get("websiteId") || undefined;
+  const service = request.nextUrl.searchParams.get("service") || undefined;
 
   try {
-    const results = await syncGoogleConnections(websiteId);
+    const results = await syncGoogleConnections(websiteId, { service });
     return NextResponse.json({
       success: true,
       synced: results.filter((r) => r.ok).length,

@@ -3,29 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import MetricTrendChart from "../metric-trend-chart";
+import ChangeBadge from "../change-badge";
+import { sum, percentChange, sinceDaysAgo, splitLastNDays } from "@/lib/monitoring/aggregate";
 
 type AnalyticsMetric = { date: string; conversions: number | null };
-
-function sum(values: (number | null)[]): number {
-  return values.reduce((total: number, v) => total + (v || 0), 0);
-}
-
-function percentChange(current: number, previous: number): number | null {
-  if (previous === 0) return current === 0 ? 0 : null;
-  return ((current - previous) / previous) * 100;
-}
-
-function ChangeBadge({ value }: { value: number | null }) {
-  if (value === null) return null;
-  const rounded = Math.round(value);
-  const color = rounded > 0 ? "#2e7d32" : rounded < 0 ? "#b3261e" : "var(--muted)";
-  const arrow = rounded > 0 ? "↑" : rounded < 0 ? "↓" : "→";
-  return (
-    <span style={{ fontSize: "0.85rem", fontWeight: 600, color, marginLeft: "0.5rem" }}>
-      {arrow} {Math.abs(rounded)}%
-    </span>
-  );
-}
 
 export default function LeadsConversions({ websiteId }: { websiteId: string }) {
   const supabase = createClient();
@@ -37,7 +18,7 @@ export default function LeadsConversions({ websiteId }: { websiteId: string }) {
     // not from google_connections directly — that table has no RLS policy
     // for authenticated at all (service-role only, holds raw OAuth tokens),
     // same reasoning as the traffic-summary and Search Console cards.
-    const since = new Date(Date.now() - 30 * 86_400_000).toISOString().slice(0, 10);
+    const since = sinceDaysAgo(30);
     const { data: rows } = await supabase
       .from("analytics_metrics")
       .select("date, conversions")
@@ -75,8 +56,7 @@ export default function LeadsConversions({ websiteId }: { websiteId: string }) {
     );
   }
 
-  const last7 = metrics.slice(0, 7);
-  const prev7 = metrics.slice(7, 14);
+  const { current: last7, previous: prev7 } = splitLastNDays(metrics, 7);
   const total7d = sum(last7.map((m) => m.conversions));
   const change = percentChange(total7d, sum(prev7.map((m) => m.conversions)));
 

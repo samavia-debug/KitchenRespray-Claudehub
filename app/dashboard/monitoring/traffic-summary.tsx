@@ -2,28 +2,8 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-
-function sum(values: (number | null)[]): number {
-  return values.reduce((total: number, v) => total + (v || 0), 0);
-}
-
-/** null when there's no prior-period data to compare against. */
-function percentChange(current: number, previous: number): number | null {
-  if (previous === 0) return current === 0 ? 0 : null;
-  return ((current - previous) / previous) * 100;
-}
-
-function ChangeBadge({ value }: { value: number | null }) {
-  if (value === null) return null;
-  const rounded = Math.round(value);
-  const color = rounded > 0 ? "#2e7d32" : rounded < 0 ? "#b3261e" : "var(--muted)";
-  const arrow = rounded > 0 ? "↑" : rounded < 0 ? "↓" : "→";
-  return (
-    <span style={{ fontSize: "0.8rem", fontWeight: 600, color, marginLeft: "0.4rem" }}>
-      {arrow} {Math.abs(rounded)}%
-    </span>
-  );
-}
+import { sum, percentChange, sinceDaysAgo, splitLastNDays, getConnectedWebsiteIds } from "@/lib/monitoring/aggregate";
+import ChangeBadge from "./change-badge";
 
 export default function TrafficSummary({ canManage }: { canManage: boolean }) {
   const supabase = createClient();
@@ -39,16 +19,15 @@ export default function TrafficSummary({ canManage }: { canManage: boolean }) {
   const [message, setMessage] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const since14 = new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10);
-    const since7 = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+    const since = sinceDaysAgo(13);
 
     // google_connections deliberately has no RLS policy for `authenticated`
     // at all (it holds raw OAuth tokens — service-role only, even for
     // Admins), so "how many sites are connected" is derived here from the
     // metrics tables instead, which do have an authenticated read policy.
     const [{ data: am, error: amError }, { data: scm, error: scmError }] = await Promise.all([
-      supabase.from("analytics_metrics").select("website_id, date, sessions, users").gte("date", since14),
-      supabase.from("search_console_metrics").select("website_id, date, clicks, impressions").gte("date", since14),
+      supabase.from("analytics_metrics").select("website_id, date, sessions, users").gte("date", since),
+      supabase.from("search_console_metrics").select("website_id, date, clicks, impressions").gte("date", since),
     ]);
 
     if (amError || scmError) {
@@ -59,23 +38,17 @@ export default function TrafficSummary({ canManage }: { canManage: boolean }) {
 
     const amRows = am || [];
     const scmRows = scm || [];
-    const amLast7 = amRows.filter((r: any) => r.date >= since7);
-    const amPrev7 = amRows.filter((r: any) => r.date < since7);
-    const scmLast7 = scmRows.filter((r: any) => r.date >= since7);
-    const scmPrev7 = scmRows.filter((r: any) => r.date < since7);
+    const { current: amCurrent, previous: amPrevious } = splitLastNDays(amRows, 7);
+    const { current: scmCurrent, previous: scmPrevious } = splitLastNDays(scmRows, 7);
 
-    setSessions7d(sum(amLast7.map((r: any) => r.sessions)));
-    setUsers7d(sum(amLast7.map((r: any) => r.users)));
-    setClicks7d(sum(scmLast7.map((r: any) => r.clicks)));
-    setImpressions7d(sum(scmLast7.map((r: any) => r.impressions)));
-    setSessionsChange(percentChange(sum(amLast7.map((r: any) => r.sessions)), sum(amPrev7.map((r: any) => r.sessions))));
-    setClicksChange(percentChange(sum(scmLast7.map((r: any) => r.clicks)), sum(scmPrev7.map((r: any) => r.clicks))));
+    setSessions7d(sum(amCurrent.map((r: any) => r.sessions)));
+    setUsers7d(sum(amCurrent.map((r: any) => r.users)));
+    setClicks7d(sum(scmCurrent.map((r: any) => r.clicks)));
+    setImpressions7d(sum(scmCurrent.map((r: any) => r.impressions)));
+    setSessionsChange(percentChange(sum(amCurrent.map((r: any) => r.sessions)), sum(amPrevious.map((r: any) => r.sessions))));
+    setClicksChange(percentChange(sum(scmCurrent.map((r: any) => r.clicks)), sum(scmPrevious.map((r: any) => r.clicks))));
 
-    const connectedWebsiteIds = new Set<string>([
-      ...amRows.map((r: any) => r.website_id),
-      ...scmRows.map((r: any) => r.website_id),
-    ]);
-    setConnectedSites(connectedWebsiteIds.size);
+    setConnectedSites(getConnectedWebsiteIds(amRows, scmRows).size);
   }, [supabase]);
 
   useEffect(() => {

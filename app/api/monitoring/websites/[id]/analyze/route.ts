@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/service";
 import { computeWebsiteStatus, sslDaysRemaining } from "@/lib/monitoring/status";
+import { sum, sinceDaysAgo, splitLastNDays } from "@/lib/monitoring/aggregate";
 
 /**
  * "Analyse with Claude" — gathers everything real this app has collected
@@ -46,20 +47,18 @@ export async function POST(request: Request, { params }: { params: { id: string 
     supabase.from("website_wordpress_checks").select("*").eq("website_id", params.id).maybeSingle(),
     supabase.from("incidents").select("*").eq("website_id", params.id).order("started_at", { ascending: false }).limit(10),
     supabase.from("website_link_checks").select("id").eq("website_id", params.id).eq("is_broken", true),
-    supabase.from("analytics_metrics").select("date, sessions, users, conversions").eq("website_id", params.id).gte("date", new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10)).order("date", { ascending: false }),
-    supabase.from("search_console_metrics").select("date, clicks, impressions, avg_position").eq("website_id", params.id).gte("date", new Date(Date.now() - 14 * 86_400_000).toISOString().slice(0, 10)).order("date", { ascending: false }),
+    supabase.from("analytics_metrics").select("date, sessions, users, conversions").eq("website_id", params.id).gte("date", sinceDaysAgo(13)).order("date", { ascending: false }),
+    supabase.from("search_console_metrics").select("date, clicks, impressions, avg_position").eq("website_id", params.id).gte("date", sinceDaysAgo(13)).order("date", { ascending: false }),
   ]);
 
   const status = computeWebsiteStatus(latestCheck || null);
   const sslDays = sslDaysRemaining(latestCheck?.ssl_expires_at || null);
   const openIncidents = (incidents || []).filter((i) => !i.resolved_at);
 
-  const sum = (rows: any[], key: string) => rows.reduce((t, r) => t + (r[key] || 0), 0);
   const am = analyticsMetrics || [];
   const scm = searchConsoleMetrics || [];
-  const amLast7 = am.filter((r) => r.date >= new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10));
-  const amPrev7 = am.filter((r) => r.date < new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10));
-  const scmLast7 = scm.filter((r) => r.date >= new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10));
+  const { current: amLast7, previous: amPrev7 } = splitLastNDays(am, 7);
+  const { current: scmLast7 } = splitLastNDays(scm, 7);
 
   const dataSummary = `
 Site: ${website.name} (${website.domain})
@@ -100,12 +99,12 @@ ${openIncidents.length} currently open. ${(incidents || []).length} total in the
 
 GOOGLE ANALYTICS (last 7 days vs previous 7 days)
 ${am.length > 0
-  ? `Sessions: ${sum(amLast7, "sessions")} (previous 7 days: ${sum(amPrev7, "sessions")}). Users: ${sum(amLast7, "users")}. Conversions: ${sum(amLast7, "conversions")} (previous 7 days: ${sum(amPrev7, "conversions")}).`
+  ? `Sessions: ${sum(amLast7.map((r) => r.sessions))} (previous 7 days: ${sum(amPrev7.map((r) => r.sessions))}). Users: ${sum(amLast7.map((r) => r.users))}. Conversions: ${sum(amLast7.map((r) => r.conversions))} (previous 7 days: ${sum(amPrev7.map((r) => r.conversions))}).`
   : "Not connected / not synced."}
 
 GOOGLE SEARCH CONSOLE (last 7 days)
 ${scm.length > 0
-  ? `Clicks: ${sum(scmLast7, "clicks")}. Impressions: ${sum(scmLast7, "impressions")}. Average position: ${
+  ? `Clicks: ${sum(scmLast7.map((r) => r.clicks))}. Impressions: ${sum(scmLast7.map((r) => r.impressions))}. Average position: ${
       scmLast7.length ? (scmLast7.reduce((t, r) => t + (r.avg_position || 0), 0) / scmLast7.length).toFixed(1) : "—"
     }.`
   : "Not connected / not synced."}

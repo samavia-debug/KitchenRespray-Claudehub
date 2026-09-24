@@ -5,10 +5,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { computeWebsiteStatus } from "@/lib/monitoring/status";
 import type { HealthCheck, Incident, Website } from "@/lib/monitoring/types";
-
-function sum(values: (number | null)[]): number {
-  return values.reduce((total: number, v) => total + (v || 0), 0);
-}
+import { sum, sinceDaysAgo, getConnectedWebsiteIds } from "@/lib/monitoring/aggregate";
 
 function greeting(): string {
   const hour = new Date().getHours();
@@ -38,7 +35,9 @@ export default function OverviewPage() {
 
   const load = useCallback(async () => {
     setError(null);
-    const since7 = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+    // 6, not 7: sinceDaysAgo(6) through today inclusive is exactly 7
+    // calendar days — sinceDaysAgo(7) would silently include an 8th.
+    const since7 = sinceDaysAgo(6);
 
     const [
       { data: websites, error: websitesError },
@@ -73,10 +72,7 @@ export default function OverviewPage() {
       else if (status === "offline") offline++;
     });
 
-    const analyticsSiteIds = new Set<string>([
-      ...(am || []).map((r: any) => r.website_id),
-      ...(scm || []).map((r: any) => r.website_id),
-    ]);
+    const analyticsSiteIds = getConnectedWebsiteIds(am || [], scm || []);
 
     setSummary({
       totalSites: sites.length,

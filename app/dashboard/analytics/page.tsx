@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import { sum, sinceDaysAgo, getConnectedWebsiteIds } from "@/lib/monitoring/aggregate";
 
 type Row = {
   website_id: string;
@@ -13,13 +14,10 @@ type Row = {
   conversions: number;
   clicks: number;
   impressions: number;
+  connected: boolean;
 };
 
 type SortKey = "sessions" | "users" | "conversions" | "clicks" | "impressions";
-
-function sum(values: (number | null)[]): number {
-  return values.reduce((total: number, v) => total + (v || 0), 0);
-}
 
 export default function AnalyticsPage() {
   const supabase = createClient();
@@ -29,7 +27,7 @@ export default function AnalyticsPage() {
 
   const load = useCallback(async () => {
     setError(null);
-    const since = new Date(Date.now() - 7 * 86_400_000).toISOString().slice(0, 10);
+    const since = sinceDaysAgo(7);
 
     const [{ data: websites, error: websitesError }, { data: am }, { data: scm }] = await Promise.all([
       supabase.from("websites").select("id, name, domain").order("name", { ascending: true }),
@@ -55,6 +53,8 @@ export default function AnalyticsPage() {
       scmByWebsite.set(r.website_id, list);
     });
 
+    const connectedIds = getConnectedWebsiteIds(am || [], scm || []);
+
     const merged: Row[] = (websites || []).map((w: any) => {
       const amRows = amByWebsite.get(w.id) || [];
       const scmRows = scmByWebsite.get(w.id) || [];
@@ -67,6 +67,7 @@ export default function AnalyticsPage() {
         conversions: sum(amRows.map((r: any) => r.conversions)),
         clicks: sum(scmRows.map((r: any) => r.clicks)),
         impressions: sum(scmRows.map((r: any) => r.impressions)),
+        connected: connectedIds.has(w.id),
       };
     });
 
@@ -101,7 +102,7 @@ export default function AnalyticsPage() {
     );
   }
 
-  const connectedRows = rows.filter((r) => r.sessions > 0 || r.users > 0 || r.clicks > 0 || r.impressions > 0);
+  const connectedRows = rows.filter((r) => r.connected);
   const sorted = [...connectedRows].sort((a, b) => b[sortKey] - a[sortKey]);
 
   const totals = {

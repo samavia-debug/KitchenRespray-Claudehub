@@ -29,9 +29,9 @@ export async function POST() {
     return NextResponse.json({ error: websitesError.message }, { status: 500 });
   }
 
-  const results: Record<string, { matched: number; total: number; error?: string }> = {};
+  async function syncService(service: GoogleService): Promise<{ matched: number; total: number; error?: string }> {
+    const total = websites?.length || 0;
 
-  for (const service of ["analytics", "search_console"] as GoogleService[]) {
     const { data: sourceConnection } = await supabase
       .from("google_connections")
       .select("website_id, external_account_email")
@@ -40,8 +40,7 @@ export async function POST() {
       .maybeSingle();
 
     if (!sourceConnection) {
-      results[service] = { matched: 0, total: websites?.length || 0, error: "No existing connection to source a token from — connect one site first." };
-      continue;
+      return { matched: 0, total, error: "No existing connection to source a token from — connect one site first." };
     }
 
     try {
@@ -111,11 +110,16 @@ export async function POST() {
         matched = rows.length;
       }
 
-      results[service] = { matched, total: websites?.length || 0 };
+      return { matched, total };
     } catch (err: any) {
-      results[service] = { matched: 0, total: websites?.length || 0, error: err.message };
+      return { matched: 0, total, error: err.message };
     }
   }
 
-  return NextResponse.json({ success: true, results });
+  // analytics and search_console are fully independent (separate tokens,
+  // separate Google API calls, separate upserts) — running them
+  // sequentially was doubling this endpoint's latency for no reason.
+  const [analytics, search_console] = await Promise.all([syncService("analytics"), syncService("search_console")]);
+
+  return NextResponse.json({ success: true, results: { analytics, search_console } });
 }
