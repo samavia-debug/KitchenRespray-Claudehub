@@ -47,6 +47,91 @@ export async function fetchGa4Metrics(
   }));
 }
 
+export type SearchQuery = {
+  query: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  avgPosition: number;
+};
+
+export async function fetchTopSearchQueries(
+  accessToken: string,
+  siteUrl: string,
+  days: number = 30,
+  limit: number = 10
+): Promise<SearchQuery[]> {
+  const today = new Date();
+  const startDate = new Date(today.getTime() - days * 86400000);
+  const fmt = (d: Date) => d.toISOString().slice(0, 10);
+
+  const res = await fetch(
+    `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        startDate: fmt(startDate),
+        endDate: fmt(today),
+        dimensions: ["query"],
+        rowLimit: limit,
+      }),
+    }
+  );
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error?.message || `Search Console query failed: HTTP ${res.status}`);
+  }
+
+  return (data.rows || []).map((row: any) => ({
+    query: row.keys[0],
+    clicks: row.clicks || 0,
+    impressions: row.impressions || 0,
+    ctr: row.ctr || 0,
+    avgPosition: row.position || 0,
+  }));
+}
+
+export type SitemapStatus = {
+  path: string;
+  isSitemapsIndex: boolean;
+  lastSubmitted: string | null;
+  lastDownloaded: string | null;
+  warnings: number;
+  errors: number;
+  submitted: number;
+  indexed: number;
+};
+
+export async function fetchSitemaps(accessToken: string, siteUrl: string): Promise<SitemapStatus[]> {
+  const res = await fetch(
+    `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/sitemaps`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error?.message || `Sitemaps list failed: HTTP ${res.status}`);
+  }
+
+  return (data.sitemap || []).map((s: any) => {
+    // "contents" is one entry per content type (web, image, video...) — sum
+    // across all of them for a single submitted/indexed count per sitemap.
+    const contents = s.contents || [];
+    return {
+      path: s.path,
+      isSitemapsIndex: Boolean(s.isSitemapsIndex),
+      lastSubmitted: s.lastSubmitted || null,
+      lastDownloaded: s.lastDownloaded || null,
+      warnings: Number(s.warnings) || 0,
+      errors: Number(s.errors) || 0,
+      submitted: contents.reduce((sum: number, c: any) => sum + (Number(c.submitted) || 0), 0),
+      indexed: contents.reduce((sum: number, c: any) => sum + (Number(c.indexed) || 0), 0),
+    };
+  });
+}
+
 export async function fetchSearchConsoleMetrics(
   accessToken: string,
   siteUrl: string,

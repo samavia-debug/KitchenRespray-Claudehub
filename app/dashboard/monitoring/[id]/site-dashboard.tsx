@@ -10,10 +10,12 @@ import { formatDuration } from "@/lib/monitoring/incidents";
 import { rateCls, rateLcp, rateTbt } from "@/lib/monitoring/vitals";
 import type { Website, HealthCheck, LinkCheck, SeoCheck, Incident, CoreWebVitalsCheck, WordPressCheck } from "@/lib/monitoring/types";
 import StatusBadge from "../status-badge";
-import NotConnectedCard from "../not-connected-card";
 import ResponseTimeChart from "../response-time-chart";
 import RunCheckButton from "./run-check-button";
 import GoogleConnectionCard from "./google-connection-card";
+import SearchConsoleInsights from "./search-console-insights";
+import LeadsConversions from "./leads-conversions";
+import ClaudeAnalysis from "./claude-analysis";
 
 const RANGES = [
   { label: "24 hours", hours: 24 },
@@ -457,11 +459,12 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
       )}
 
       {tab === "SEO" && (
+        <>
         <div className="card">
           <h2>Technical SEO spot-check</h2>
           <p style={{ color: "var(--muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
-            Homepage + robots.txt + sitemap.xml only — a technical spot-check, not a full crawl
-            or a replacement for Google Search Console (arrives separately once connected).
+            Homepage + robots.txt + sitemap.xml only — a technical spot-check, not a full crawl.
+            Real search queries and indexing status from Google Search Console are below.
           </p>
           {canManage && (
             <div style={{ marginBottom: "1rem" }}>
@@ -512,11 +515,11 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
             <p style={{ color: "var(--muted)" }}>No SEO check recorded yet.</p>
           )}
         </div>
+        <SearchConsoleInsights websiteId={website.id} />
+        </>
       )}
 
-      {tab === "Leads & Conversions" && (
-        <NotConnectedCard title="Leads & Conversions" phaseNote="arrives in Phase 6." />
-      )}
+      {tab === "Leads & Conversions" && <LeadsConversions websiteId={website.id} />}
 
       {tab === "WordPress" && (
         <div className="card">
@@ -698,9 +701,7 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
         </div>
       )}
 
-      {tab === "Claude Analysis" && (
-        <NotConnectedCard title="Claude Analysis" phaseNote="the 'Analyse with Claude' action arrives in Phase 8, once enough metrics (GA4, GSC, SEO) are flowing in to give Claude something real to interpret." />
-      )}
+      {tab === "Claude Analysis" && <ClaudeAnalysis websiteId={website.id} canManage={canManage} />}
     </>
   );
 }

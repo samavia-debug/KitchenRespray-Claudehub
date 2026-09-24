@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { GoogleConnection, GoogleService } from "@/lib/monitoring/types";
+import MetricTrendChart from "../metric-trend-chart";
 
 const LABELS: Record<GoogleService, string> = {
   analytics: "Google Analytics",
@@ -24,6 +25,24 @@ function sum(values: (number | null)[]): number {
 function avg(values: (number | null)[]): number {
   const nonNull = values.filter((v): v is number => v !== null);
   return nonNull.length ? nonNull.reduce((a, b) => a + b, 0) / nonNull.length : 0;
+}
+
+/** null when there's no prior-period data to compare against (e.g. site connected less than 14 days ago). */
+function percentChange(current: number, previous: number): number | null {
+  if (previous === 0) return current === 0 ? 0 : null;
+  return ((current - previous) / previous) * 100;
+}
+
+function ChangeBadge({ value }: { value: number | null }) {
+  if (value === null) return null;
+  const rounded = Math.round(value);
+  const color = rounded > 0 ? "#2e7d32" : rounded < 0 ? "#b3261e" : "var(--muted)";
+  const arrow = rounded > 0 ? "↑" : rounded < 0 ? "↓" : "→";
+  return (
+    <span style={{ fontSize: "0.85rem", fontWeight: 600, color, marginLeft: "0.5rem" }}>
+      {arrow} {Math.abs(rounded)}%
+    </span>
+  );
 }
 
 export default function GoogleConnectionCard({
@@ -117,8 +136,15 @@ export default function GoogleConnectionCard({
     setSyncing(false);
   }
 
+  // Rows are sorted newest-first, so [0,7) is the last 7 days and [7,14)
+  // is the 7 days before that — the comparison window for the % badges.
   const last7Analytics = analyticsMetrics.slice(0, 7);
+  const prev7Analytics = analyticsMetrics.slice(7, 14);
   const last7SearchConsole = searchConsoleMetrics.slice(0, 7);
+  const prev7SearchConsole = searchConsoleMetrics.slice(7, 14);
+
+  const sessionsChange = percentChange(sum(last7Analytics.map((m) => m.sessions)), sum(prev7Analytics.map((m) => m.sessions)));
+  const clicksChange = percentChange(sum(last7SearchConsole.map((m) => m.clicks)), sum(prev7SearchConsole.map((m) => m.clicks)));
 
   return (
     <div className="card">
@@ -170,13 +196,21 @@ export default function GoogleConnectionCard({
                 <div className="grid-2" style={{ marginTop: "1rem" }}>
                   <div>
                     <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "0 0 0.2rem" }}>Sessions (last 7 days)</p>
-                    <p style={{ fontSize: "1.6rem", fontWeight: 700, margin: 0 }}>{sum(last7Analytics.map((m) => m.sessions))}</p>
+                    <p style={{ fontSize: "1.6rem", fontWeight: 700, margin: 0 }}>
+                      {sum(last7Analytics.map((m) => m.sessions))}
+                      <ChangeBadge value={sessionsChange} />
+                    </p>
                   </div>
                   <div>
                     <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "0 0 0.2rem" }}>Users (last 7 days)</p>
                     <p style={{ fontSize: "1.6rem", fontWeight: 700, margin: 0 }}>{sum(last7Analytics.map((m) => m.users))}</p>
                   </div>
                 </div>
+                <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "1rem 0 0.4rem" }}>Sessions — last 30 days</p>
+                <MetricTrendChart
+                  points={analyticsMetrics.map((m) => ({ date: m.date, value: m.sessions || 0 }))}
+                  color="#b5502e"
+                />
                 <div className="table-wrap" style={{ marginTop: "1rem" }}>
                   <table className="data-table">
                     <thead>
@@ -213,7 +247,10 @@ export default function GoogleConnectionCard({
                 <div className="grid-2" style={{ marginTop: "1rem" }}>
                   <div>
                     <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "0 0 0.2rem" }}>Clicks (last 7 days)</p>
-                    <p style={{ fontSize: "1.6rem", fontWeight: 700, margin: 0 }}>{sum(last7SearchConsole.map((m) => m.clicks))}</p>
+                    <p style={{ fontSize: "1.6rem", fontWeight: 700, margin: 0 }}>
+                      {sum(last7SearchConsole.map((m) => m.clicks))}
+                      <ChangeBadge value={clicksChange} />
+                    </p>
                   </div>
                   <div>
                     <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "0 0 0.2rem" }}>Impressions (last 7 days)</p>
@@ -228,6 +265,11 @@ export default function GoogleConnectionCard({
                     <p style={{ fontSize: "1.6rem", fontWeight: 700, margin: 0 }}>{avg(last7SearchConsole.map((m) => m.avg_position)).toFixed(1)}</p>
                   </div>
                 </div>
+                <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "1rem 0 0.4rem" }}>Clicks — last 30 days</p>
+                <MetricTrendChart
+                  points={searchConsoleMetrics.map((m) => ({ date: m.date, value: m.clicks || 0 }))}
+                  color="#b5502e"
+                />
                 <div className="table-wrap" style={{ marginTop: "1rem" }}>
                   <table className="data-table">
                     <thead>
