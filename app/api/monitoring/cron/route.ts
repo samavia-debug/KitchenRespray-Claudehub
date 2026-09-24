@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { runAndRecordCheck } from "@/lib/monitoring/record";
+import { syncGoogleConnections } from "@/lib/google/sync";
 
 const CONCURRENCY = 5;
+
+// Matches /api/google/sync's own maxDuration — this route can now also run
+// a Google sync pass in the same invocation, on the roughly-daily tick
+// where connections are stale.
+export const maxDuration = 60;
 
 function isAuthorized(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -11,10 +17,12 @@ function isAuthorized(request: NextRequest): boolean {
 }
 
 /**
- * Scheduled health checker for every active website — triggered by Vercel
- * Cron (see vercel.json). Runs with bounded concurrency so it never hammers
- * client sites, and only checks sites whose own monitoring_interval has
- * actually elapsed since their last check.
+ * Scheduled tick for every active website — triggered by an external
+ * scheduler (cron-job.org) hitting this route with the CRON_SECRET bearer
+ * token. Runs website health checks with bounded concurrency, only for
+ * sites whose own monitoring_interval has actually elapsed, then a Google
+ * Analytics/Search Console sync pass for whichever connections are stale
+ * (see syncGoogleConnections above).
  */
 async function runCron(request: NextRequest) {
   if (!isAuthorized(request)) {
@@ -65,10 +73,29 @@ async function runCron(request: NextRequest) {
     });
   }
 
+  // GA4/Search Console data itself only updates a few times a day, so each
+  // connection is only re-synced once its own last_synced_at is 20+ hours
+  // old (or was never set) — most ticks find nothing stale and no-op.
+  // Staleness is tracked per connection rather than gated on one global
+  // "last sync" check, so a run cut short by a function timeout partway
+  // through 50+ connections doesn't leave the rest stuck stale for a full
+  // day — whatever didn't get reached is still stale next tick.
+  let googleSync: { synced: number; failed: number; error?: string };
+  try {
+    const syncResults = await syncGoogleConnections(undefined, { onlyStaleHours: 20 });
+    googleSync = {
+      synced: syncResults.filter((r) => r.ok).length,
+      failed: syncResults.filter((r) => !r.ok).length,
+    };
+  } catch (err: any) {
+    googleSync = { synced: 0, failed: 0, error: err.message };
+  }
+
   return NextResponse.json({
     checkedCount: results.length,
     skippedCount: (websites?.length || 0) - due.length,
     results,
+    googleSync,
   });
 }
 
