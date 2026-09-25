@@ -7,8 +7,9 @@ import { sum, sinceDaysAgo, splitLastNDays } from "@/lib/monitoring/aggregate";
 /**
  * "Analyse with Claude" — gathers everything real this app has collected
  * for one site (uptime/SSL, SEO spot-check, Core Web Vitals, WordPress
- * fingerprint, open/recent incidents, GA4 + Search Console 7-day figures)
- * and asks Claude to explain what it means in plain English. Matches the
+ * fingerprint, open/recent incidents, GA4 + Search Console 7-day figures,
+ * plus relevant Knowledge Base entries) and asks Claude to explain what it
+ * means in plain English. Matches the
  * project's original design principle: every statement must be traceable
  * to real collected data — the prompt explicitly forbids inventing causes
  * or claiming certainty the data doesn't support, and any field this app
@@ -50,6 +51,14 @@ export async function POST(request: Request, { params }: { params: { id: string 
     supabase.from("analytics_metrics").select("date, sessions, users, conversions").eq("website_id", params.id).gte("date", sinceDaysAgo(13)).order("date", { ascending: false }),
     supabase.from("search_console_metrics").select("date, clicks, impressions, avg_position").eq("website_id", params.id).gte("date", sinceDaysAgo(13)).order("date", { ascending: false }),
   ]);
+
+  // Company-wide knowledge entries (website_id is null) plus any entries
+  // scoped specifically to this site — the Knowledge Base's "active
+  // context for Claude" use case.
+  const { data: knowledgeEntries } = await supabase
+    .from("knowledge_entries")
+    .select("entry_type, title, content, website_id")
+    .or(`website_id.is.null,website_id.eq.${params.id}`);
 
   const status = computeWebsiteStatus(latestCheck || null);
   const sslDays = sslDaysRemaining(latestCheck?.ssl_expires_at || null);
@@ -108,9 +117,16 @@ ${scm.length > 0
       scmLast7.length ? (scmLast7.reduce((t, r) => t + (r.avg_position || 0), 0) / scmLast7.length).toFixed(1) : "—"
     }.`
   : "Not connected / not synced."}
+
+BUSINESS CONTEXT (from the team's Knowledge Base — company-wide entries plus any specific to this site)
+${(knowledgeEntries || []).length > 0
+  ? (knowledgeEntries || [])
+      .map((k) => `[${k.entry_type}${k.website_id ? ", this site" : ", company-wide"}] ${k.title}: ${k.content}`)
+      .join("\n")
+  : "No knowledge base entries recorded."}
 `.trim();
 
-  const systemPrompt = `You are a technical analyst summarizing website monitoring data for a non-technical business team. You will be given real, actual monitoring data collected by their system — health checks, SEO, Core Web Vitals, WordPress fingerprinting, incidents, and Google Analytics/Search Console figures.
+  const systemPrompt = `You are a technical analyst summarizing website monitoring data for a non-technical business team. You will be given real, actual monitoring data collected by their system — health checks, SEO, Core Web Vitals, WordPress fingerprinting, incidents, Google Analytics/Search Console figures, and business context from the team's own Knowledge Base (pricing, service details, policies).
 
 Critical rule: every statement you make must be directly traceable to the data given. Never invent a cause, never claim certainty the data doesn't support, and never assume something is fine just because it wasn't checked — if a section says "Not checked yet" or "Not connected", say that plainly rather than ignoring it or assuming health. Use wording like "may indicate" or "worth checking" rather than definitive causal claims when the data doesn't establish cause. If two things changed around the same time (e.g. a performance drop and a traffic drop), you may note the correlation but must not claim one caused the other.
 
