@@ -38,7 +38,7 @@ export default function KnowledgeBasePage() {
 
       const { data: myProfile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
 
-      if (myProfile?.role !== "Admin" && myProfile?.role !== "Manager") {
+      if (myProfile?.role !== "Admin") {
         router.replace("/dashboard");
         return;
       }

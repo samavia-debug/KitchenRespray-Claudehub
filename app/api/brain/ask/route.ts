@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { getSessionProfile } from "@/lib/auth/session";
+import { requireRole } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sum, percentChange, sinceDaysAgo, splitLastNDays } from "@/lib/monitoring/aggregate";
 
@@ -22,10 +22,8 @@ import { sum, percentChange, sinceDaysAgo, splitLastNDays } from "@/lib/monitori
  * this is the point to add real keyword/semantic retrieval on top.
  */
 export async function POST(request: Request) {
-  const session = await getSessionProfile();
-  if (!session?.profile) {
-    return NextResponse.json({ error: "Not authorized" }, { status: 401 });
-  }
+  const auth = await requireRole(["Admin"]);
+  if ("error" in auth) return auth.error;
 
   const { question } = await request.json();
   if (!question || typeof question !== "string" || !question.trim()) {

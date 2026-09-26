@@ -14,7 +14,7 @@ const ENTRY_EXCERPT_CHARS = 4000; // bounded so one document doesn't dominate ev
  * rather than creating a duplicate.
  */
 export async function POST(request: Request) {
-  const auth = await requireRole(["Admin", "Manager"]);
+  const auth = await requireRole(["Admin"]);
   if ("error" in auth) return auth.error;
 
   const { documentId } = await request.json();
