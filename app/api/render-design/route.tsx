@@ -99,6 +99,14 @@ type RenderOptions = {
   // needs a guaranteed-light colour instead of the brand's normal (often
   // dark) text colour, since the scrim underneath is always dark.
   onDark?: boolean;
+  // True when this block sits on a colors.green (brand accent) background
+  // specifically — e.g. color_block's top band. Distinct from onDark: text
+  // there uses colors.accentOnDark, which *is* colors.green itself in the
+  // 3+-brand-colour case, so reusing onDark on an accent-coloured (not
+  // actually dark) background renders accent-on-accent text — invisible.
+  // colors.white is already the correct accent-contrast colour (see
+  // resolveColors' textOnAccent), so onAccent uses that instead.
+  onAccent?: boolean;
   // True when the layout places the photo itself (photo_overlay, split) —
   // photo_split/photo_single blocks are skipped rather than double-rendered.
   skipPhotoBlocks?: boolean;
@@ -114,13 +122,13 @@ function renderBlock(
   colors: Colors,
   options: RenderOptions = {}
 ) {
-  const bodyColor = options.onDark ? colors.lightText : colors.text;
+  const bodyColor = options.onDark ? colors.lightText : options.onAccent ? colors.white : colors.text;
   // colors.green is the brand accent, luminance-chosen to read well on
   // dark backgrounds when 3+ brand colours are set — but the <3-colour
   // fallback's "green" is a dark colour meant for a light background, and
   // is nearly invisible on the new dark layouts. accentOnDark substitutes
   // a guaranteed-light colour there; see resolveColors.
-  const accentColor = options.onDark ? colors.accentOnDark : colors.green;
+  const accentColor = options.onDark ? colors.accentOnDark : options.onAccent ? colors.white : colors.green;
 
   switch (block.type) {
     case "badge":
@@ -132,7 +140,7 @@ function renderBlock(
             alignItems: "center",
             padding: "10px 22px",
             borderRadius: "999px",
-            background: options.onDark ? "rgba(0,0,0,0.4)" : hexToRgba(colors.text, 0.08),
+            background: options.onDark ? "rgba(0,0,0,0.4)" : options.onAccent ? hexToRgba(colors.text, 0.15) : hexToRgba(colors.text, 0.08),
             color: accentColor,
             fontSize: 22,
             fontWeight: 700,
@@ -391,6 +399,91 @@ function buildDarkStackedCanvas(blocks: Block[], photos: PhotoUrls, colors: Colo
   );
 }
 
+const COLOR_BLOCK_TOP_HEIGHT = 420;
+
+/**
+ * A genuine two-tone graphic composition (solid accent band on top, cream
+ * below), not just another uniform-background stacked card — built
+ * specifically to give posts with no photo a second visually distinct
+ * option beyond dark_stacked (see the LAYOUTS comment in
+ * app/api/generate-design/route.ts for why this exists: real requests
+ * almost never include a photo, so photo_overlay/split are rarely
+ * reachable and the two remaining layouts looked repetitive together).
+ */
+function buildColorBlockCanvas(blocks: Block[], colors: Colors) {
+  const topTypes = new Set(["badge", "big_headline"]);
+  const contentBlocks = blocks.filter((b) => b.type !== "photo_split" && b.type !== "photo_single");
+  const footer = contentBlocks.find((b) => b.type === "cta_footer");
+  const topBlocks = contentBlocks.filter((b) => topTypes.has(b.type));
+  const bottomBlocks = contentBlocks.filter((b) => !topTypes.has(b.type) && b.type !== "cta_footer");
+  const noPhotos: PhotoUrls = { photo_url: null, photo_before_url: null, photo_after_url: null };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", width: `${CANVAS_WIDTH}px`, height: `${CANVAS_WIDTH}px`, background: colors.cream }}>
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          justifyContent: "center",
+          gap: "20px",
+          width: "100%",
+          height: `${COLOR_BLOCK_TOP_HEIGHT}px`,
+          background: colors.green,
+          padding: `${CANVAS_PADDING}px`,
+        }}
+      >
+        {topBlocks.map((block, i) => renderBlock(block, i, noPhotos, colors, { onAccent: true, skipPhotoBlocks: true }))}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", flexGrow: 1, gap: "24px", padding: `${CANVAS_PADDING}px` }}>
+        {bottomBlocks.map((block, i) => renderBlock(block, i, noPhotos, colors, { skipPhotoBlocks: true }))}
+      </div>
+      {footer && renderBlock(footer, contentBlocks.length, noPhotos, colors, {})}
+    </div>
+  );
+}
+
+/**
+ * Built around one oversized stat as the dominant visual element — for
+ * "save up to 80%" style messaging. Genuinely different visual weight from
+ * every other no-photo layout (one huge number instead of stacked text
+ * blocks), and like quote_hero, doesn't need a photo at all. Falls back to
+ * a large headline instead if the content has no stat_highlight block, so
+ * the layout never renders an empty hero.
+ */
+function buildStatHeroCanvas(blocks: Block[], colors: Colors) {
+  const contentBlocks = blocks.filter((b) => b.type !== "photo_split" && b.type !== "photo_single");
+  const footer = contentBlocks.find((b) => b.type === "cta_footer");
+  const badge = contentBlocks.find((b) => b.type === "badge");
+  const stat = contentBlocks.find((b): b is Extract<Block, { type: "stat_highlight" }> => b.type === "stat_highlight");
+  const headline = contentBlocks.find((b) => b.type === "big_headline");
+  const rest = contentBlocks.filter((b) => b !== footer && b !== badge && b !== stat && b !== headline);
+  const noPhotos: PhotoUrls = { photo_url: null, photo_before_url: null, photo_after_url: null };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", width: `${CANVAS_WIDTH}px`, height: `${CANVAS_WIDTH}px`, background: colors.cream, padding: `${CANVAS_PADDING}px` }}>
+      {badge && renderBlock(badge, 0, noPhotos, colors, { centered: true })}
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", flexGrow: 1, gap: "18px" }}>
+        {stat ? (
+          // A bare <> fragment here (one ternary branch with multiple
+          // children, directly inside a flexDirection: "column" parent) is
+          // the exact Satori bug already found and fixed in
+          // buildSplitCanvas earlier this session — confirmed empirically
+          // again here (the second child silently failed to render
+          // correctly). A real wrapping div avoids it.
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "12px" }}>
+            <div style={{ display: "flex", fontSize: 180, fontWeight: 900, color: colors.green, lineHeight: 1 }}>{stat.stat}</div>
+            <div style={{ display: "flex", fontSize: 32, color: colors.text, textAlign: "center" }}>{stat.label}</div>
+          </div>
+        ) : (
+          headline && renderBlock(headline, 1, noPhotos, colors, { centered: true })
+        )}
+        {rest.map((block, i) => renderBlock(block, i + 2, noPhotos, colors, { centered: true, skipPhotoBlocks: true }))}
+      </div>
+      {footer && renderBlock(footer, contentBlocks.length, noPhotos, colors, { centered: true })}
+    </div>
+  );
+}
+
 function buildQuoteHeroCanvas(blocks: Block[], colors: Colors) {
   const contentBlocks = blocks.filter((b) => b.type !== "photo_split" && b.type !== "photo_single");
   const footer = contentBlocks.find((b) => b.type === "cta_footer");
@@ -611,6 +704,10 @@ export async function POST(request: Request) {
         ? buildDarkStackedCanvas(blocks, photos, colors)
         : layout === "quote_hero"
         ? buildQuoteHeroCanvas(blocks, colors)
+        : layout === "color_block"
+        ? buildColorBlockCanvas(blocks, colors)
+        : layout === "stat_hero"
+        ? buildStatHeroCanvas(blocks, colors)
         : buildStackedCanvas(blocks, photos, colors);
 
     const imageResponse = new ImageResponse(canvas, { width: CANVAS_WIDTH, height: CANVAS_WIDTH });

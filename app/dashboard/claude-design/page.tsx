@@ -367,6 +367,12 @@ export default function ClaudeDesignPage() {
             />
           </div>
 
+          <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "0 0 0.75rem" }}>
+            Adding a photo unlocks two more layouts (full-bleed photo and side-by-side before/after) — without one,
+            Claude can only choose from the text-only layouts, which is the main reason posts can start to look
+            similar to each other. Even one photo makes a real difference.
+          </p>
+
           <div className="grid-2">
             <div className="field">
               <label>Before photo (optional)</label>

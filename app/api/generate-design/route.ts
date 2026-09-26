@@ -26,6 +26,18 @@ const LAYOUTS = [
       "Everything centered on a plain light background: badge, stars, a large centered pull-quote, author line, CTA footer. Built specifically for customer reviews/testimonials — do not use for anything else. Does not require a photo (and won't show one even if blocks include a photo block).",
   },
   {
+    key: "color_block",
+    label: "Colour Block",
+    guidance:
+      "A bold solid-colour band across the top (badge + headline in light text) with a lighter section below for the rest of the copy and CTA — a genuine two-tone graphic composition, not just a uniform background. Does not require a photo. Good default alternative to Stacked Card / Dark Stacked when neither photo layout is available, so posts aren't limited to only two looks.",
+  },
+  {
+    key: "stat_hero",
+    label: "Stat Hero",
+    guidance:
+      "One number/stat rendered huge and centered (e.g. '80%' filling most of the canvas) with a short supporting line and CTA footer. Only choose this when the content genuinely has a strong stat/number to lead with (e.g. cost savings, time saved) — requires a stat_highlight block. Does not require a photo.",
+  },
+  {
     key: "photo_overlay",
     label: "Full-Bleed Photo Overlay",
     guidance:
@@ -156,7 +168,7 @@ export async function POST(request: NextRequest) {
 
   const { data: recentRequests } = await supabase
     .from("design_requests")
-    .select("generated_post_type, generated_design_notes")
+    .select("generated_post_type, generated_design_notes, generated_caption")
     .eq("service_line", designRequest.service_line)
     .not("generated_post_type", "is", null)
     .order("created_at", { ascending: false })
@@ -169,6 +181,13 @@ export async function POST(request: NextRequest) {
   const recentLayouts = (recentRequests || [])
     .map((r) => r.generated_design_notes)
     .filter(Boolean);
+
+  // First ~8 words only — enough to catch a repeated opening move ("Another
+  // kitchen transformed...", "This [X] kitchen had...") without asking
+  // Claude to avoid entire real captions, which would over-constrain it.
+  const recentOpenings = (recentRequests || [])
+    .map((r) => r.generated_caption?.trim().split(/\s+/).slice(0, 8).join(" "))
+    .filter((s): s is string => Boolean(s));
 
   const postTypeMenu = POST_TYPES.map(
     (t) => `- ${t.key}: ${t.label} — ${t.guidance}`
@@ -215,6 +234,12 @@ Recently used layouts for this service line (most recent first): ${
   }
 
 Choose a layout that is DIFFERENT from the recently used ones above whenever a photo is available and more than one layout would genuinely work, so consecutive posts don't look the same. Only repeat a layout when it's clearly the best fit or no alternative is possible (e.g. no photo available).
+
+Recent caption openings for this service line, first few words only (most recent first): ${
+    recentOpenings.length ? recentOpenings.map((o) => `"${o}..."`).join("; ") : "None yet"
+  }
+
+Write a caption that opens differently from every one of those — a different sentence structure, not just different words in the same shape (e.g. don't always start "Another kitchen transformed..." or "This [X] kitchen had..."). Vary between: a direct question, a short punchy statement, a scene-setting description, a customer's-voice opening, or leading with the result before the backstory. The variety should be genuinely noticeable read back to back, not cosmetic.
 
 ${buildBlockLibrary(companyProfile)}
 
