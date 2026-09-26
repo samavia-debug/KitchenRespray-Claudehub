@@ -47,6 +47,49 @@ export async function fetchGa4Metrics(
   }));
 }
 
+export type Ga4ChannelBreakdown = {
+  channel: string; // GA4's own grouping, e.g. "Paid Search", "Organic Search", "Direct", "Referral"
+  sessions: number;
+  conversions: number;
+};
+
+/**
+ * Sessions/conversions grouped by GA4's own traffic-channel classification
+ * (sessionDefaultChannelGroup) — this is the only way to see paid vs
+ * organic vs direct etc. broken out; the plain daily sessions/conversions
+ * totals used elsewhere are a blend of every channel with no split. Fetched
+ * live (like fetchTopSearchQueries) rather than synced/stored, since it's
+ * a supplementary breakdown view, not a time series the rest of the
+ * dashboard depends on.
+ */
+export async function fetchGa4ChannelBreakdown(
+  accessToken: string,
+  propertyId: string,
+  days: number = 30
+): Promise<Ga4ChannelBreakdown[]> {
+  const res = await fetch(`https://analyticsdata.googleapis.com/v1beta/${propertyId}:runReport`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+    body: JSON.stringify({
+      dateRanges: [{ startDate: `${days}daysAgo`, endDate: "today" }],
+      dimensions: [{ name: "sessionDefaultChannelGroup" }],
+      metrics: [{ name: "sessions" }, { name: "conversions" }],
+      orderBys: [{ metric: { metricName: "sessions" }, desc: true }],
+    }),
+  });
+
+  const data = await res.json();
+  if (!res.ok) {
+    throw new Error(data.error?.message || `GA4 runReport failed: HTTP ${res.status}`);
+  }
+
+  return (data.rows || []).map((row: any) => ({
+    channel: row.dimensionValues[0].value || "(unassigned)",
+    sessions: Number(row.metricValues[0].value) || 0,
+    conversions: Number(row.metricValues[1].value) || 0,
+  }));
+}
+
 export type SearchQuery = {
   query: string;
   clicks: number;

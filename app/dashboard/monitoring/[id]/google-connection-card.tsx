@@ -37,6 +37,7 @@ export default function GoogleConnectionCard({
   const [connection, setConnection] = useState<GoogleConnection | null | "loading">("loading");
   const [analyticsMetrics, setAnalyticsMetrics] = useState<AnalyticsMetric[]>([]);
   const [searchConsoleMetrics, setSearchConsoleMetrics] = useState<SearchConsoleMetric[]>([]);
+  const [channelBreakdown, setChannelBreakdown] = useState<{ channel: string; sessions: number; conversions: number }[] | null>(null);
   const [disconnecting, setDisconnecting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -62,6 +63,11 @@ export default function GoogleConnectionCard({
             .gte("date", since)
             .order("date", { ascending: false });
           setAnalyticsMetrics(rows || []);
+
+          fetch(`/api/google/channel-breakdown/${websiteId}`)
+            .then((r) => r.json())
+            .then((d) => setChannelBreakdown(d.breakdown || null))
+            .catch(() => setChannelBreakdown(null));
         } else {
           const { data: rows } = await supabase
             .from("search_console_metrics")
@@ -186,6 +192,38 @@ export default function GoogleConnectionCard({
                   points={analyticsMetrics.map((m) => ({ date: m.date, value: m.sessions || 0 }))}
                   color="#b5502e"
                 />
+
+                {channelBreakdown && channelBreakdown.length > 0 && (
+                  <>
+                    <p style={{ fontSize: "0.85rem", color: "var(--muted)", margin: "1rem 0 0.4rem" }}>
+                      Traffic by channel — last 30 days (does this include paid ad clicks?)
+                    </p>
+                    <div className="table-wrap">
+                      <table className="data-table">
+                        <thead>
+                          <tr>
+                            <th>Channel</th>
+                            <th>Sessions</th>
+                            <th>Conversions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {channelBreakdown.map((c) => (
+                            <tr key={c.channel} style={{ cursor: "default" }}>
+                              <td style={c.channel.toLowerCase().includes("paid") ? { fontWeight: 700, color: "#2e7d32" } : undefined}>
+                                {c.channel}
+                                {c.channel.toLowerCase().includes("paid") ? " (ads)" : ""}
+                              </td>
+                              <td>{c.sessions}</td>
+                              <td>{c.conversions}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+
                 <div className="table-wrap" style={{ marginTop: "1rem" }}>
                   <table className="data-table">
                     <thead>

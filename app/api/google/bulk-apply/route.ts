@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/service";
-import { domainCore, listGa4Properties, listSearchConsoleSites } from "@/lib/google/discovery";
+import { listGa4Properties, listSearchConsoleSites, matchGa4Property, matchSearchConsoleSite } from "@/lib/google/discovery";
 import { getValidGoogleAccessToken } from "@/lib/google/token";
 import type { GoogleService } from "@/lib/google/oauth";
 
@@ -56,11 +56,10 @@ export async function POST() {
 
       if (service === "analytics") {
         const properties = await listGa4Properties(accessToken);
-        const byCore = new Map(properties.map((p) => [domainCore(p.displayName), p]));
 
         const rows = (websites || [])
           .map((w) => {
-            const property = byCore.get(domainCore(w.domain));
+            const property = matchGa4Property(w.domain, properties);
             if (!property) return null;
             return {
               website_id: w.id,
@@ -83,11 +82,10 @@ export async function POST() {
         matched = rows.length;
       } else {
         const sites = await listSearchConsoleSites(accessToken);
-        const byCore = new Map(sites.map((s) => [domainCore(s.siteUrl), s]));
 
         const rows = (websites || [])
           .map((w) => {
-            const site = byCore.get(domainCore(w.domain));
+            const site = matchSearchConsoleSite(w.domain, sites);
             if (!site) return null;
             return {
               website_id: w.id,

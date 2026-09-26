@@ -31,6 +31,20 @@ describe("matchGa4Property", () => {
   it("returns null when nothing matches", () => {
     expect(matchGa4Property("unrelated-site.com", properties)).toBeNull();
   });
+
+  it("resolves two real properties that differ only by TLD instead of collapsing them (regression: kitchenrespray.com vs .ie both silently matched the .ie property, leaving .com's real ad-driven traffic disconnected)", () => {
+    const collidingProperties = [
+      { property: "properties/com", displayName: "kitchenrespray.com" },
+      { property: "properties/ie", displayName: "kitchenrespray.ie" },
+    ];
+
+    expect(matchGa4Property("kitchenrespray.com", collidingProperties)).toEqual(collidingProperties[0]);
+    expect(matchGa4Property("kitchenrespray.ie", collidingProperties)).toEqual(collidingProperties[1]);
+  });
+
+  it("still falls back to a core (TLD-stripped) match when no exact-domain match exists", () => {
+    expect(matchGa4Property("kitchenrespraykildare.com", properties)).toEqual(properties[1]);
+  });
 });
 
 describe("matchSearchConsoleSite", () => {
@@ -49,5 +63,15 @@ describe("matchSearchConsoleSite", () => {
 
   it("returns null when nothing matches", () => {
     expect(matchSearchConsoleSite("unrelated-site.com", sites)).toBeNull();
+  });
+
+  it("resolves two real sites that differ only by TLD instead of collapsing them", () => {
+    const collidingSites = [
+      { siteUrl: "https://kitchenrespray.com/", permissionLevel: "siteFullUser" },
+      { siteUrl: "https://kitchenrespray.ie/", permissionLevel: "siteFullUser" },
+    ];
+
+    expect(matchSearchConsoleSite("kitchenrespray.com", collidingSites)).toEqual(collidingSites[0]);
+    expect(matchSearchConsoleSite("kitchenrespray.ie", collidingSites)).toEqual(collidingSites[1]);
   });
 });

@@ -6,6 +6,14 @@
  * just the domain in slightly different shapes ("bathrespray" vs
  * "https://bathrespray.com/"), so this normalization is enough to match
  * reliably without needing the account owner to manually map every site.
+ *
+ * Stripping the TLD is a real collision risk when two real properties
+ * differ only by TLD (kitchenrespray.com vs kitchenrespray.ie both reduce
+ * to "kitchenrespray") — confirmed in production: both sites silently
+ * matched to the same .ie property, leaving the real .com property (and
+ * its actual, much higher, ad-driven traffic) completely disconnected.
+ * matchGa4Property/matchSearchConsoleSite below now try an exact
+ * (TLD-preserved) match first specifically to avoid this.
  */
 export function domainCore(input: string): string {
   return input
@@ -16,6 +24,16 @@ export function domainCore(input: string): string {
     .replace(/\/$/, "")
     .replace(/\.[a-z]{2,}(\.[a-z]{2,})?$/, "")
     .replace(/[^a-z0-9]/g, "");
+}
+
+/** Like domainCore, but keeps the TLD — for an exact-domain match attempt. */
+function domainExact(input: string): string {
+  return input
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^sc-domain:/, "")
+    .replace(/^www\./, "")
+    .replace(/\/$/, "");
 }
 
 export type Ga4PropertySummary = {
@@ -32,6 +50,10 @@ export function matchGa4Property(
   domain: string,
   properties: Ga4PropertySummary[]
 ): Ga4PropertySummary | null {
+  const exact = domainExact(domain);
+  const exactMatch = properties.find((p) => domainExact(p.displayName) === exact);
+  if (exactMatch) return exactMatch;
+
   const core = domainCore(domain);
   return properties.find((p) => domainCore(p.displayName) === core) || null;
 }
@@ -40,6 +62,10 @@ export function matchSearchConsoleSite(
   domain: string,
   sites: SearchConsoleSite[]
 ): SearchConsoleSite | null {
+  const exact = domainExact(domain);
+  const exactMatch = sites.find((s) => domainExact(s.siteUrl) === exact);
+  if (exactMatch) return exactMatch;
+
   const core = domainCore(domain);
   return sites.find((s) => domainCore(s.siteUrl) === core) || null;
 }
