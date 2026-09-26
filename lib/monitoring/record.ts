@@ -3,6 +3,7 @@ import { checkWebsiteHealth, checkBrokenLinks } from "./checker";
 import { checkSeo, checkDomainExpiry } from "./seo";
 import { checkCoreWebVitals } from "./vitals";
 import { checkWordPress } from "./wordpress";
+import { checkWebsiteSecurity } from "./security";
 import { computeWebsiteStatus } from "./status";
 import { decideIncidentAction, formatDuration } from "./incidents";
 import { notifySlack, notifyWhatsApp, formatIncidentOpenedMessage, formatIncidentResolvedMessage } from "./notify";
@@ -215,6 +216,51 @@ export async function runAndRecordVitalsCheck(websiteId: string, domain: string)
     .single();
 
   if (error) throw new Error(`Failed to record Core Web Vitals check: ${error.message}`);
+
+  return data;
+}
+
+/**
+ * Runs the site-hijack security scan and upserts the result. Alerts via
+ * Slack/WhatsApp only on a fresh transition into "critical" (the site
+ * wasn't already flagged), same dedup reasoning as incident open/resolve —
+ * otherwise every 30-minute cron tick would re-alert for a site still
+ * compromised from the last check.
+ */
+export async function runAndRecordSecurityCheck(websiteId: string, domain: string) {
+  const result = await checkWebsiteSecurity(domain);
+  const service = createServiceClient();
+
+  const { data: previous } = await service
+    .from("website_security_checks")
+    .select("risk_level")
+    .eq("website_id", websiteId)
+    .maybeSingle();
+
+  const { data, error } = await service
+    .from("website_security_checks")
+    .upsert(
+      {
+        website_id: websiteId,
+        final_url: result.finalUrl,
+        domain_mismatch: result.domainMismatch,
+        flagged_keywords: result.flaggedKeywords,
+        risk_level: result.riskLevel,
+        error_message: result.errorMessage,
+        checked_at: new Date().toISOString(),
+      },
+      { onConflict: "website_id" }
+    )
+    .select()
+    .single();
+
+  if (error) throw new Error(`Failed to record security check: ${error.message}`);
+
+  if (result.riskLevel === "critical" && previous?.risk_level !== "critical") {
+    const { data: website } = await service.from("websites").select("name").eq("id", websiteId).single();
+    const message = `🔴 *Security risk detected* — ${website?.name || domain} (${domain}) appears to be redirecting to a different, unrelated domain (${result.finalUrl || "unknown"}). This matches the pattern of a hijacked/compromised site, not an expired domain. Check it now.`;
+    await Promise.all([notifySlack(message), notifyWhatsApp(message)]);
+  }
 
   return data;
 }

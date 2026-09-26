@@ -10,6 +10,7 @@ import AddWebsiteForm from "./add-website-form";
 import AlertsPanel from "./alerts-panel";
 import TrafficSummary from "./traffic-summary";
 import MorningSummary from "./morning-summary";
+import SecuritySummary from "./security-summary";
 
 const RECENT_INCIDENT_WINDOW_HOURS = 48;
 
@@ -118,6 +119,8 @@ export default function MonitoringCommandCentre() {
       </div>
 
       <MorningSummary websites={websites} recentIncidents={recentIncidents} canManage={canManage} onChecked={load} />
+
+      <SecuritySummary />
 
       <SummaryCards websites={websites} />
 

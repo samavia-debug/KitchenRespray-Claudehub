@@ -16,6 +16,7 @@ import GoogleConnectionCard from "./google-connection-card";
 import SearchConsoleInsights from "./search-console-insights";
 import LeadsConversions from "./leads-conversions";
 import ClaudeAnalysis from "./claude-analysis";
+import SecurityCheckTab from "./security-check";
 
 const RANGES = [
   { label: "24 hours", hours: 24 },
@@ -31,6 +32,7 @@ const TABS = [
   "Google Analytics",
   "Search Console",
   "SEO",
+  "Security",
   "Leads & Conversions",
   "WordPress",
   "SSL & Domain",
@@ -518,6 +520,8 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
         <SearchConsoleInsights websiteId={website.id} />
         </>
       )}
+
+      {tab === "Security" && <SecurityCheckTab websiteId={website.id} canManage={canManage} />}
 
       {tab === "Leads & Conversions" && <LeadsConversions websiteId={website.id} />}
 

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
-import { runAndRecordCheck } from "@/lib/monitoring/record";
+import { runAndRecordCheck, runAndRecordSecurityCheck } from "@/lib/monitoring/record";
 import { syncGoogleConnections } from "@/lib/google/sync";
 import { notifySlack, notifyWhatsApp } from "@/lib/monitoring/notify";
 
@@ -17,6 +17,12 @@ const MAX_DURATION_MS = maxDuration * 1000;
 // skipped is simply picked up on a later tick, so skipping cleanly here is
 // strictly better than starting a sync that has no real chance to finish.
 const MIN_SYNC_BUDGET_MS = 15_000;
+// Security scan runs far less often than the health check (every 6h per
+// site, not every 30min) — it's cheap per-fetch but there's no value in
+// re-scanning a clean site every tick, and this keeps 30+ extra full-page
+// fetches from stacking onto every single cron run.
+const SECURITY_SCAN_STALE_HOURS = 6;
+const MIN_SECURITY_BUDGET_MS = 10_000;
 
 function isAuthorized(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -28,9 +34,11 @@ function isAuthorized(request: NextRequest): boolean {
  * Scheduled tick for every active website — triggered by an external
  * scheduler (cron-job.org) hitting this route with the CRON_SECRET bearer
  * token. Runs website health checks with bounded concurrency, only for
- * sites whose own monitoring_interval has actually elapsed, then a Google
- * Analytics/Search Console sync pass for whichever connections are stale
- * (see syncGoogleConnections above).
+ * sites whose own monitoring_interval has actually elapsed; a security
+ * scan pass (site-hijack detection) for connections stale by
+ * SECURITY_SCAN_STALE_HOURS; then a Google Analytics/Search Console sync
+ * pass for whichever connections are stale (see syncGoogleConnections
+ * above).
  */
 async function runCron(request: NextRequest) {
   if (!isAuthorized(request)) {
@@ -82,6 +90,39 @@ async function runCron(request: NextRequest) {
     });
   }
 
+  // Security scan: same per-site staleness gating as Google sync, on its
+  // own longer interval (see SECURITY_SCAN_STALE_HOURS above).
+  const { data: securityChecks } = await service.from("website_security_checks").select("website_id, checked_at");
+  const securityCheckedMap = new Map<string, string>((securityChecks || []).map((c: any) => [c.website_id, c.checked_at]));
+
+  const securityDue = (websites || []).filter((w) => {
+    const last = securityCheckedMap.get(w.id);
+    if (!last) return true;
+    const elapsedHours = (now - new Date(last).getTime()) / 3_600_000;
+    return elapsedHours >= SECURITY_SCAN_STALE_HOURS;
+  });
+
+  const securityResults: { domain: string; ok: boolean; riskLevel?: string; error?: string }[] = [];
+  const securityTimeRemainingMs = MAX_DURATION_MS - (Date.now() - cronStart);
+
+  if (securityTimeRemainingMs >= MIN_SECURITY_BUDGET_MS) {
+    for (let i = 0; i < securityDue.length; i += CONCURRENCY) {
+      if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_SECURITY_BUDGET_MS) break;
+
+      const batch = securityDue.slice(i, i + CONCURRENCY);
+      const batchResults = await Promise.allSettled(batch.map((w) => runAndRecordSecurityCheck(w.id, w.domain)));
+
+      batchResults.forEach((result, idx) => {
+        const domain = batch[idx].domain;
+        if (result.status === "fulfilled") {
+          securityResults.push({ domain, ok: true, riskLevel: (result.value as any)?.risk_level });
+        } else {
+          securityResults.push({ domain, ok: false, error: String(result.reason) });
+        }
+      });
+    }
+  }
+
   // GA4/Search Console data itself only updates a few times a day, so each
   // connection is only re-synced once its own last_synced_at is 20+ hours
   // old (or was never set) — most ticks find nothing stale and no-op.
@@ -121,6 +162,9 @@ async function runCron(request: NextRequest) {
     checkedCount: results.length,
     skippedCount: (websites?.length || 0) - due.length,
     results,
+    securityScanned: securityResults.length,
+    securitySkipped: securityDue.length - securityResults.length,
+    securityResults,
     googleSync,
   });
 }
