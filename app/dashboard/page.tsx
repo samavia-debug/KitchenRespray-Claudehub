@@ -46,6 +46,7 @@ export default function OverviewPage() {
       { data: am },
       { data: scm },
       { count: analysedCount },
+      { data: securityChecks },
     ] = await Promise.all([
       supabase.from("websites").select("*").eq("is_active", true),
       supabase.from("website_latest_check").select("*"),
@@ -53,6 +54,7 @@ export default function OverviewPage() {
       supabase.from("analytics_metrics").select("website_id, sessions").gte("date", since7),
       supabase.from("search_console_metrics").select("website_id, clicks").gte("date", since7),
       supabase.from("claude_analyses").select("website_id", { count: "exact", head: true }),
+      supabase.from("website_security_checks").select("website_id, risk_level"),
     ]);
 
     if (websitesError) {
@@ -62,10 +64,11 @@ export default function OverviewPage() {
 
     const sites = (websites || []) as Website[];
     const checksByWebsite = new Map<string, HealthCheck>((latestChecks || []).map((c: any) => [c.website_id, c]));
+    const securityRiskMap = new Map<string, string>((securityChecks || []).map((s: any) => [s.website_id, s.risk_level]));
 
     let healthy = 0, attention = 0, critical = 0, offline = 0;
     sites.forEach((w) => {
-      const status = computeWebsiteStatus(checksByWebsite.get(w.id) || null);
+      const status = computeWebsiteStatus(checksByWebsite.get(w.id) || null, securityRiskMap.get(w.id) as any);
       if (status === "healthy") healthy++;
       else if (status === "attention") attention++;
       else if (status === "critical") critical++;

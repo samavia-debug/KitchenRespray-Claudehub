@@ -35,7 +35,7 @@ export default function MonitoringCommandCentre() {
 
     const recentCutoff = new Date(Date.now() - RECENT_INCIDENT_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
 
-    const [{ data: sites, error: sitesError }, { data: latest }, { data: uptime }, { data: brokenLinks }, { data: incidentRows }] =
+    const [{ data: sites, error: sitesError }, { data: latest }, { data: uptime }, { data: brokenLinks }, { data: incidentRows }, { data: securityChecks }] =
       await Promise.all([
         supabase.from("websites").select("*").order("name", { ascending: true }),
         supabase.from("website_latest_check").select("*"),
@@ -46,6 +46,7 @@ export default function MonitoringCommandCentre() {
         // query covers both "what's open right now" and "what happened
         // overnight" for the morning summary.
         supabase.from("incidents").select("*").or(`resolved_at.is.null,started_at.gte.${recentCutoff}`),
+        supabase.from("website_security_checks").select("website_id, risk_level"),
       ]);
 
     if (sitesError) {
@@ -59,6 +60,9 @@ export default function MonitoringCommandCentre() {
     );
     const brokenLinksMap = new Map<string, number>(
       (brokenLinks || []).map((b: any) => [b.website_id, b.broken_count])
+    );
+    const securityRiskMap = new Map<string, string>(
+      (securityChecks || []).map((s: any) => [s.website_id, s.risk_level])
     );
     const allIncidents = (incidentRows || []) as Incident[];
     const openIncidentMap = new Map<string, Incident>(
@@ -74,7 +78,7 @@ export default function MonitoringCommandCentre() {
         latestCheck,
         uptimePercent7d: uptimeRow ? uptimeRow.uptime_percent : null,
         checksCount7d: uptimeRow ? uptimeRow.checks_count : 0,
-        status: computeWebsiteStatus(latestCheck),
+        status: computeWebsiteStatus(latestCheck, securityRiskMap.get(w.id) as any),
         brokenLinkCount: brokenLinksMap.get(w.id) || 0,
         openIncident: openIncidentMap.get(w.id) || null,
       };

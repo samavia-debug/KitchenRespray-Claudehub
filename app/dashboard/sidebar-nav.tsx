@@ -47,6 +47,7 @@ export default function SidebarNav() {
     { href: "/dashboard/leads", label: "Leads" },
     { href: "/dashboard/claude-analysis", label: "Claude Analysis" },
     { href: "/dashboard/incidents", label: "Incidents" },
+    { href: "/dashboard/security", label: "Security" },
     { href: "/dashboard/claude-design", label: "Claude Design" },
     ...(isAdmin ? [{ href: "/dashboard/knowledge-base", label: "🧠 Business Brain" }] : []),
     ...(isManagerOrAbove ? [{ href: "/dashboard/knowledge", label: "Company Knowledge" }] : []),

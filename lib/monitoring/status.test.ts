@@ -52,6 +52,23 @@ describe("computeWebsiteStatus", () => {
   it("is attention when response time is between 2s and 5s", () => {
     expect(computeWebsiteStatus(check({ response_time_ms: 3000 }))).toBe("attention");
   });
+
+  it("is critical when the security scan is critical, even with a perfectly healthy uptime check (the respraymykitchen.ie case — up, valid SSL, but hijacked)", () => {
+    expect(computeWebsiteStatus(check({}), "critical")).toBe("critical");
+  });
+
+  it("is critical from a critical security scan even with no health check recorded yet", () => {
+    expect(computeWebsiteStatus(null, "critical")).toBe("critical");
+  });
+
+  it("is attention when the security scan is suspicious but uptime is otherwise healthy", () => {
+    expect(computeWebsiteStatus(check({}), "suspicious")).toBe("attention");
+  });
+
+  it("ignores a 'none' or missing security risk and falls back to uptime-only status", () => {
+    expect(computeWebsiteStatus(check({}), "none")).toBe("healthy");
+    expect(computeWebsiteStatus(check({}))).toBe("healthy");
+  });
 });
 
 describe("sslDaysRemaining", () => {

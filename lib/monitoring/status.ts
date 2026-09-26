@@ -12,11 +12,22 @@ export function sslDaysRemaining(sslExpiresAt: string | null): number | null {
 }
 
 /**
- * Derives a single status from the latest health check. Deliberately simple
- * and transparent (no hidden scoring) so every status can be explained by
- * pointing at the specific measured value that triggered it.
+ * Derives a single status from the latest health check (and, when available,
+ * the latest security scan). Deliberately simple and transparent (no hidden
+ * scoring) so every status can be explained by pointing at the specific
+ * measured value that triggered it.
+ *
+ * A hijacked site (e.g. respraymykitchen.ie, redirecting to an unrelated
+ * gambling site while still technically "up" with valid SSL) is checked
+ * first and takes priority over every uptime signal — the site being up is
+ * exactly what makes an active hijack worse than downtime, not a reason to
+ * call it healthy.
  */
-export function computeWebsiteStatus(latestCheck: HealthCheck | null): WebsiteStatus {
+export function computeWebsiteStatus(
+  latestCheck: HealthCheck | null,
+  securityRiskLevel?: "none" | "suspicious" | "critical" | null
+): WebsiteStatus {
+  if (securityRiskLevel === "critical") return "critical";
   if (!latestCheck) return "unknown";
   if (!latestCheck.is_up) return "offline";
 
@@ -36,6 +47,7 @@ export function computeWebsiteStatus(latestCheck: HealthCheck | null): WebsiteSt
     latestCheck.response_time_ms > ATTENTION_RESPONSE_MS
   )
     return "attention";
+  if (securityRiskLevel === "suspicious") return "attention";
 
   return "healthy";
 }

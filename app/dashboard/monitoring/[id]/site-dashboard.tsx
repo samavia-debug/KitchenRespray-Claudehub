@@ -102,6 +102,11 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
   const [vitalsCheck, setVitalsCheck] = useState<CoreWebVitalsCheck | null>(null);
   const [wordpressCheck, setWordpressCheck] = useState<WordPressCheck | null>(null);
   const [incidents, setIncidents] = useState<Incident[]>([]);
+  const [securityCheck, setSecurityCheck] = useState<{
+    risk_level: "none" | "suspicious" | "critical";
+    final_url: string | null;
+    flagged_keywords: string[];
+  } | null>(null);
   const [canManage, setCanManage] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("Overview");
@@ -141,6 +146,13 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
       .order("started_at", { ascending: false })
       .limit(50);
     setIncidents(incidentRows || []);
+
+    const { data: securityRow } = await supabase
+      .from("website_security_checks")
+      .select("risk_level, final_url, flagged_keywords")
+      .eq("website_id", websiteId)
+      .maybeSingle();
+    setSecurityCheck(securityRow || null);
   }, [supabase, websiteId]);
 
   useEffect(() => {
@@ -163,7 +175,7 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
   }
 
   const latestCheck = checks[0] || null;
-  const status = computeWebsiteStatus(latestCheck);
+  const status = computeWebsiteStatus(latestCheck, securityCheck?.risk_level || null);
   const sslDays = sslDaysRemaining(latestCheck?.ssl_expires_at || null);
   const rangeCutoff = Date.now() - rangeHours * 60 * 60 * 1000;
   const checksInRange = checks.filter((c) => new Date(c.checked_at).getTime() >= rangeCutoff);
@@ -213,7 +225,13 @@ export default function SiteDashboard({ websiteId }: { websiteId: string }) {
         <div className="grid-2">
           <div className="card">
             <h2>Findings &amp; recommended actions</h2>
-            {getFindings(status, latestCheck).map((f, i) => (
+            {getFindings(
+              status,
+              latestCheck,
+              securityCheck
+                ? { riskLevel: securityCheck.risk_level, finalUrl: securityCheck.final_url, flaggedKeywords: securityCheck.flagged_keywords }
+                : null
+            ).map((f, i) => (
               <div key={i} style={{ marginBottom: i === 0 ? "0" : "0.9rem" }}>
                 <p style={{ fontSize: "0.9rem", margin: "0 0 0.3rem" }}>{f.finding}</p>
                 {f.recommendedActions.length > 0 && (

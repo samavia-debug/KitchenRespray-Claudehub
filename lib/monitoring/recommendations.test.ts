@@ -63,6 +63,35 @@ describe("getFindings", () => {
     const findings = getFindings("critical", check({ http_status: 503, response_time_ms: 300 }));
     expect(findings.some((f) => /http 503/i.test(f.finding))).toBe(true);
   });
+
+  it("surfaces a critical security finding even when every uptime check passes (the respraymykitchen.ie case)", () => {
+    const findings = getFindings("critical", check({}), {
+      riskLevel: "critical",
+      finalUrl: "https://kitchensavages.com/",
+      flaggedKeywords: ["slot gacor"],
+    });
+
+    expect(findings.some((f) => /hijacked|redirects/i.test(f.finding))).toBe(true);
+    // The bug this guards against: with security ignored, a clean uptime
+    // check falls through to "All checks passing", directly contradicting
+    // a status badge that says critical.
+    expect(findings.some((f) => /all checks passing/i.test(f.finding))).toBe(false);
+  });
+
+  it("surfaces a suspicious security finding without treating it as critical", () => {
+    const findings = getFindings("attention", check({}), {
+      riskLevel: "suspicious",
+      finalUrl: null,
+      flaggedKeywords: ["hacked by"],
+    });
+
+    expect(findings.some((f) => /hacked by/i.test(f.finding))).toBe(true);
+  });
+
+  it("ignores a clean security scan and reports the usual all-clear", () => {
+    const findings = getFindings("healthy", check({}), { riskLevel: "none", finalUrl: null, flaggedKeywords: [] });
+    expect(findings.some((f) => /all checks passing/i.test(f.finding))).toBe(true);
+  });
 });
 
 describe("priorityScore", () => {

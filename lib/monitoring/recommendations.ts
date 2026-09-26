@@ -16,17 +16,42 @@ export type Finding = {
  * specific field on `check`, phrased as "this measurement suggests trying
  * X" rather than a confirmed diagnosis.
  */
-export function getFindings(status: WebsiteStatus, check: HealthCheck | null): Finding[] {
-  if (!check) {
-    return [
-      {
-        finding: "No successful check has been recorded yet for this site.",
-        recommendedActions: ["Run a manual check now to establish a baseline."],
-      },
-    ];
+export type SecurityFindingInput = {
+  riskLevel: "none" | "suspicious" | "critical";
+  finalUrl: string | null;
+  flaggedKeywords: string[];
+};
+
+export function getFindings(status: WebsiteStatus, check: HealthCheck | null, security?: SecurityFindingInput | null): Finding[] {
+  const findings: Finding[] = [];
+
+  // Checked first and independently of the uptime check below — a hijacked
+  // site is, by definition, up and passing every uptime/SSL signal, which
+  // is exactly why this can't be folded into the "!check" early return or
+  // it would silently disappear from the findings list.
+  if (security?.riskLevel === "critical") {
+    findings.push({
+      finding: `Homepage redirects to an unrelated domain (${security.finalUrl || "different host"}), matching the pattern of a hijacked/compromised site rather than an expired domain.`,
+      recommendedActions: [
+        "Log into the hosting account and confirm admin access still works.",
+        "Check for unfamiliar admin users or plugins, and run a malware scan.",
+        "Rotate hosting and CMS admin passwords.",
+      ],
+    });
+  } else if (security?.riskLevel === "suspicious") {
+    findings.push({
+      finding: `Homepage content matched known spam/hijack keywords (${security.flaggedKeywords.join(", ")}), though it's still on its own domain.`,
+      recommendedActions: ["Load the homepage directly to confirm what a real visitor sees.", "Check for injected content in the CMS if this is unexpected."],
+    });
   }
 
-  const findings: Finding[] = [];
+  if (!check) {
+    findings.push({
+      finding: "No successful check has been recorded yet for this site.",
+      recommendedActions: ["Run a manual check now to establish a baseline."],
+    });
+    return findings;
+  }
   const sslDays = sslDaysRemaining(check.ssl_expires_at);
 
   if (!check.is_up) {

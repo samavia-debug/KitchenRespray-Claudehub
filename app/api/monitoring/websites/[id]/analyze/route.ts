@@ -8,8 +8,8 @@ import { sum, sinceDaysAgo, splitLastNDays } from "@/lib/monitoring/aggregate";
  * "Analyse with Claude" — gathers everything real this app has collected
  * for one site (uptime/SSL, SEO spot-check, Core Web Vitals, WordPress
  * fingerprint, open/recent incidents, GA4 + Search Console 7-day figures,
- * plus relevant Knowledge Base entries) and asks Claude to explain what it
- * means in plain English. Matches the
+ * the security/hijack scan, plus relevant Knowledge Base entries) and asks
+ * Claude to explain what it means in plain English. Matches the
  * project's original design principle: every statement must be traceable
  * to real collected data — the prompt explicitly forbids inventing causes
  * or claiming certainty the data doesn't support, and any field this app
@@ -52,6 +52,12 @@ export async function POST(request: Request, { params }: { params: { id: string 
     supabase.from("search_console_metrics").select("date, clicks, impressions, avg_position").eq("website_id", params.id).gte("date", sinceDaysAgo(13)).order("date", { ascending: false }),
   ]);
 
+  const { data: securityCheck } = await supabase
+    .from("website_security_checks")
+    .select("risk_level, final_url, flagged_keywords, checked_at")
+    .eq("website_id", params.id)
+    .maybeSingle();
+
   // Company-wide knowledge entries (website_id is null) plus any entries
   // scoped specifically to this site — the Knowledge Base's "active
   // context for Claude" use case.
@@ -60,7 +66,7 @@ export async function POST(request: Request, { params }: { params: { id: string 
     .select("entry_type, title, content, website_id")
     .or(`website_id.is.null,website_id.eq.${params.id}`);
 
-  const status = computeWebsiteStatus(latestCheck || null);
+  const status = computeWebsiteStatus(latestCheck || null, securityCheck?.risk_level || null);
   const sslDays = sslDaysRemaining(latestCheck?.ssl_expires_at || null);
   const openIncidents = (incidents || []).filter((i) => !i.resolved_at);
 
@@ -83,6 +89,15 @@ ${latestCheck?.ssl_valid === null || latestCheck?.ssl_valid === undefined ? "Not
 
 BROKEN LINKS
 ${brokenLinks?.length ?? 0} broken links currently detected on the homepage scan.
+
+SECURITY SCAN (site-hijack detection — does the homepage redirect elsewhere or match known spam/gambling content)
+${securityCheck
+  ? securityCheck.risk_level === "critical"
+    ? `CRITICAL: homepage redirects to a different domain (${securityCheck.final_url || "unknown"}) — matches the pattern of a hijacked/compromised site. Checked at ${securityCheck.checked_at}.`
+    : securityCheck.risk_level === "suspicious"
+    ? `Suspicious content flagged (${(securityCheck.flagged_keywords || []).join(", ")}), same domain. Checked at ${securityCheck.checked_at}.`
+    : `Clean — no hijack or spam content detected. Checked at ${securityCheck.checked_at}.`
+  : "Not checked yet."}
 
 SEO SPOT-CHECK
 ${seoCheck
