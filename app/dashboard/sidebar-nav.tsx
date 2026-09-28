@@ -60,13 +60,19 @@ export default function SidebarNav() {
     // (an external scheduler issue, not caught until someone happened to
     // ask) — a glance at the sidebar should catch that now instead.
     async function checkSyncFreshness() {
-      const { data } = await supabase
-        .from("google_connections")
-        .select("last_synced_at")
-        .order("last_synced_at", { ascending: true, nullsFirst: true })
-        .limit(1);
-
-      const oldest = data?.[0]?.last_synced_at ?? null;
+      // google_connections has no RLS policy for authenticated users at
+      // all (service-role only — it holds raw OAuth tokens), so this
+      // can't be a direct Supabase query from the browser like the rest
+      // of this component; it goes through a small API route instead.
+      let oldest: string | null = null;
+      try {
+        const res = await fetch("/api/google/sync-status");
+        const data = await res.json();
+        oldest = data.oldestSyncAt ?? null;
+      } catch {
+        // Network failure — fall through to the "very-stale" branch below
+        // rather than silently showing nothing.
+      }
 
       if (!oldest) {
         setSyncFreshness("very-stale");
