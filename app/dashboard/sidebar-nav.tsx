@@ -10,10 +10,26 @@ const comingSoon = [
   "Connecteam",
 ];
 
+type SyncFreshness = "fresh" | "stale" | "very-stale";
+
+const FRESHNESS_COLOR: Record<SyncFreshness, string> = {
+  fresh: "#2e7d32",
+  stale: "#b98900",
+  "very-stale": "#b3261e",
+};
+
+function formatHoursAgo(hours: number): string {
+  if (hours < 1) return "less than an hour ago";
+  if (hours < 48) return `${Math.round(hours)}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
 export default function SidebarNav() {
   const pathname = usePathname();
   const supabase = createClient();
   const [role, setRole] = useState<string | null>(null);
+  const [syncFreshness, setSyncFreshness] = useState<SyncFreshness | null>(null);
+  const [syncTooltip, setSyncTooltip] = useState<string>("Checking sync status...");
 
   useEffect(() => {
     async function checkRole() {
@@ -37,6 +53,40 @@ export default function SidebarNav() {
     checkRole();
   }, []);
 
+  useEffect(() => {
+    // Analytics and Leads are both driven by the same Google Analytics
+    // sync — a single "oldest connection" check covers both. This exists
+    // because the automatic sync silently went stale for ~3 days once
+    // (an external scheduler issue, not caught until someone happened to
+    // ask) — a glance at the sidebar should catch that now instead.
+    async function checkSyncFreshness() {
+      const { data } = await supabase
+        .from("google_connections")
+        .select("last_synced_at")
+        .order("last_synced_at", { ascending: true, nullsFirst: true })
+        .limit(1);
+
+      const oldest = data?.[0]?.last_synced_at ?? null;
+
+      if (!oldest) {
+        setSyncFreshness("very-stale");
+        setSyncTooltip("No Google connections have ever synced");
+        return;
+      }
+
+      const hours = (Date.now() - new Date(oldest).getTime()) / 3_600_000;
+      const level: SyncFreshness = hours > 48 ? "very-stale" : hours > 24 ? "stale" : "fresh";
+      setSyncFreshness(level);
+      setSyncTooltip(
+        level === "fresh"
+          ? `All sites synced within the last 24h (oldest: ${formatHoursAgo(hours)})`
+          : `Some sites haven't synced in a while — oldest: ${formatHoursAgo(hours)}`
+      );
+    }
+
+    checkSyncFreshness();
+  }, []);
+
   const isAdmin = role === "Admin";
   const isManagerOrAbove = role === "Admin" || role === "Manager";
 
@@ -53,6 +103,8 @@ export default function SidebarNav() {
     ...(isManagerOrAbove ? [{ href: "/dashboard/knowledge", label: "Company Knowledge" }] : []),
     ...(isAdmin ? [{ href: "/dashboard/settings", label: "Settings" }] : []),
   ];
+
+  const syncBadgeHrefs = new Set(["/dashboard/analytics", "/dashboard/leads"]);
 
   return (
     <nav>
@@ -71,6 +123,20 @@ export default function SidebarNav() {
           }
         >
           {link.label}
+          {syncBadgeHrefs.has(link.href) && syncFreshness && (
+            <span
+              title={syncTooltip}
+              style={{
+                display: "inline-block",
+                width: "8px",
+                height: "8px",
+                borderRadius: "50%",
+                background: FRESHNESS_COLOR[syncFreshness],
+                marginLeft: "0.45rem",
+                verticalAlign: "middle",
+              }}
+            />
+          )}
         </Link>
       ))}
       <div style={{ height: "1rem" }} />
