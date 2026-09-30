@@ -16,6 +16,25 @@ function extensionOf(fileName: string, fileType: string | null): string {
   return (fromName || fromType).toLowerCase();
 }
 
+/**
+ * Recovers the real uploaded file's name (with its real extension) from
+ * the storage public URL — the Documents tab uploads to a randomly
+ * generated `${timestamp}-${random}.${realExtension}` path, so the last
+ * URL segment always carries the genuine extension. This matters because
+ * the document's user-typed title (e.g. "Employee Handbook") is *not* a
+ * filename and almost never ends in a real extension, which is exactly
+ * what made every upload register as "unsupported" regardless of its
+ * actual type until this was traced back from a live bug report.
+ */
+export function extractFileNameFromPath(pathOrUrl: string): string {
+  try {
+    const pathname = new URL(pathOrUrl).pathname;
+    return decodeURIComponent(pathname.split("/").pop() || "");
+  } catch {
+    return "";
+  }
+}
+
 export async function extractDocumentText(
   buffer: Buffer,
   fileName: string,

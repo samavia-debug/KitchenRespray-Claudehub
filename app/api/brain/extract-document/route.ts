@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/service";
-import { extractDocumentText } from "@/lib/knowledge/extract";
+import { extractDocumentText, extractFileNameFromPath } from "@/lib/knowledge/extract";
 
 const ENTRY_EXCERPT_CHARS = 4000; // bounded so one document doesn't dominate every Ask-the-Brain prompt
 
@@ -41,7 +41,12 @@ export async function POST(request: Request) {
   }
 
   const buffer = Buffer.from(await fileResponse.arrayBuffer());
-  const result = await extractDocumentText(buffer, doc.title, doc.file_type);
+  // doc.title is a user-typed label ("Employee Handbook"), not a
+  // filename — it almost never carries a real extension, which is what
+  // made every upload register as "unsupported" regardless of its actual
+  // type. The real extension lives in the storage URL itself.
+  const realFileName = extractFileNameFromPath(doc.file_path) || doc.title;
+  const result = await extractDocumentText(buffer, realFileName, doc.file_type);
 
   if (result.status !== "done") {
     await supabase
