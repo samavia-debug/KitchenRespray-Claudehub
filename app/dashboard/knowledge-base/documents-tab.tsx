@@ -76,13 +76,36 @@ export default function DocumentsTab() {
     return websites.find((w) => w.id === websiteId)?.name || "Unknown site";
   }
 
+  // Custom categories already used by existing documents (e.g. "Price
+  // Lists"), so the dropdown offers them instead of forcing a re-type via
+  // "Other..." every time — that re-typing is exactly what previously
+  // produced two near-identical categories ("Price lists" vs "Price
+  // Lists") differing only by case. Deduped case-insensitively.
+  const existingCustomCategories = Array.from(
+    new Map(
+      (documents ?? [])
+        .map((d) => d.category)
+        .filter((c): c is string => !!c)
+        .filter((c) => !CATEGORY_OPTIONS.some((opt) => opt.toLowerCase() === c.toLowerCase()))
+        .map((c) => [c.toLowerCase(), c] as const)
+    ).values()
+  );
+  const knownCategories = [...CATEGORY_OPTIONS, ...existingCustomCategories];
+
+  // Reuses an existing category's exact casing when the typed value only
+  // differs by case, instead of silently creating another near-duplicate.
+  function normalizeCategory(input: string): string {
+    const trimmed = input.trim();
+    return knownCategories.find((c) => c.toLowerCase() === trimmed.toLowerCase()) || trimmed;
+  }
+
   async function handleUpload() {
     if (!file || !title.trim()) {
       setMessage("Error: a title and a file are required.");
       return;
     }
 
-    const resolvedCategory = category === "Other" ? customCategory.trim() : category;
+    const resolvedCategory = normalizeCategory(category === "Other" ? customCategory : category);
 
     setUploading(true);
     setMessage(null);
@@ -217,6 +240,16 @@ export default function DocumentsTab() {
                   {c}
                 </option>
               ))}
+              {existingCustomCategories.length > 0 && (
+                <>
+                  <option disabled>──────────</option>
+                  {existingCustomCategories.map((c) => (
+                    <option key={c} value={c}>
+                      {c}
+                    </option>
+                  ))}
+                </>
+              )}
               <option value="Other">Other...</option>
             </select>
           </div>
@@ -260,19 +293,21 @@ export default function DocumentsTab() {
       ) : (
         <>
           <div className="tabs" style={{ marginBottom: "1rem" }}>
-            {["All", ...CATEGORY_OPTIONS, ...Array.from(new Set(documents.map((d) => d.category).filter((c): c is string => !!c && !CATEGORY_OPTIONS.includes(c))))].map((c) => (
+            {["All", ...knownCategories].map((c) => (
               <button key={c} className={categoryFilter === c ? "active" : ""} onClick={() => setCategoryFilter(c)}>
-                {c === "All" ? `All (${documents.length})` : `${c} (${documents.filter((d) => d.category === c).length})`}
+                {c === "All"
+                  ? `All (${documents.length})`
+                  : `${c} (${documents.filter((d) => d.category?.toLowerCase() === c.toLowerCase()).length})`}
               </button>
             ))}
           </div>
-          {documents.filter((d) => categoryFilter === "All" || d.category === categoryFilter).length === 0 && (
+          {documents.filter((d) => categoryFilter === "All" || d.category?.toLowerCase() === categoryFilter.toLowerCase()).length === 0 && (
             <div className="card">
               <p style={{ color: "var(--muted)" }}>No documents in this category yet.</p>
             </div>
           )}
           {documents
-            .filter((d) => categoryFilter === "All" || d.category === categoryFilter)
+            .filter((d) => categoryFilter === "All" || d.category?.toLowerCase() === categoryFilter.toLowerCase())
             .map((doc) => (
           <div key={doc.id} className="card" style={{ marginBottom: "0.75rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.75rem" }}>
