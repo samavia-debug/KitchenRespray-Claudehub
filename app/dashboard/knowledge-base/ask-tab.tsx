@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ENTRY_TYPE_LABELS, type EntryType } from "./entry-types";
 
 type Source = { id: string; title: string; entry_type: EntryType };
@@ -17,6 +17,41 @@ export default function AskTab({ onViewSource }: { onViewSource: (title: string)
   const [question, setQuestion] = useState("");
   const [asking, setAsking] = useState(false);
   const [history, setHistory] = useState<Exchange[]>([]);
+  const [listening, setListening] = useState(false);
+  const [speaking, setSpeaking] = useState(false);
+  const [speakEnabled, setSpeakEnabled] = useState(false);
+
+  const recognitionRef = useRef<any>(null);
+  const transcriptRef = useRef("");
+
+  // Web Speech API support varies by browser (solid in Chrome/Edge, absent
+  // in Safari/Firefox for SpeechRecognition) — feature-detect rather than
+  // assuming, so unsupported browsers just don't see the voice controls
+  // instead of a broken button.
+  const micSupported = typeof window !== "undefined" && !!((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
+  const speechSupported = typeof window !== "undefined" && !!window.speechSynthesis;
+
+  useEffect(() => {
+    return () => {
+      recognitionRef.current?.stop();
+      if (speechSupported) window.speechSynthesis.cancel();
+    };
+  }, [speechSupported]);
+
+  function speak(text: string) {
+    if (!speechSupported) return;
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.onstart = () => setSpeaking(true);
+    utterance.onend = () => setSpeaking(false);
+    utterance.onerror = () => setSpeaking(false);
+    window.speechSynthesis.speak(utterance);
+  }
+
+  function stopSpeaking() {
+    if (speechSupported) window.speechSynthesis.cancel();
+    setSpeaking(false);
+  }
 
   async function ask(q: string) {
     if (!q.trim() || asking) return;
@@ -39,6 +74,7 @@ export default function AskTab({ onViewSource }: { onViewSource: (title: string)
           next[next.length - 1] = { ...last, error: data.error || "Something went wrong." };
         } else {
           next[next.length - 1] = { ...last, answer: data.answer, sources: data.sources || [] };
+          if (speakEnabled) speak(data.answer);
         }
         return next;
       });
@@ -53,6 +89,41 @@ export default function AskTab({ onViewSource }: { onViewSource: (title: string)
     }
   }
 
+  function toggleListening() {
+    if (!micSupported) return;
+
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const Ctor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    const recognition = new Ctor();
+    recognition.interimResults = true;
+    recognition.continuous = false;
+    transcriptRef.current = "";
+
+    recognition.onresult = (event: any) => {
+      let transcript = "";
+      for (let i = 0; i < event.results.length; i++) {
+        transcript += event.results[i][0].transcript;
+      }
+      transcriptRef.current = transcript;
+      setQuestion(transcript);
+    };
+    // Read from the ref, not the `question` state — this closure was
+    // created when listening started, so `question` here would be stale.
+    recognition.onend = () => {
+      setListening(false);
+      if (transcriptRef.current.trim()) ask(transcriptRef.current);
+    };
+    recognition.onerror = () => setListening(false);
+
+    recognitionRef.current = recognition;
+    recognition.start();
+    setListening(true);
+  }
+
   return (
     <>
       <div className="card" style={{ marginBottom: "1.25rem" }}>
@@ -65,10 +136,37 @@ export default function AskTab({ onViewSource }: { onViewSource: (title: string)
             style={{ flex: 1 }}
             disabled={asking}
           />
+          {micSupported && (
+            <button
+              type="button"
+              className="btn-secondary btn"
+              onClick={toggleListening}
+              disabled={asking}
+              title={listening ? "Stop listening" : "Ask by voice"}
+              style={listening ? { color: "#b3261e", borderColor: "#b3261e" } : undefined}
+            >
+              {listening ? "● Listening..." : "🎤"}
+            </button>
+          )}
           <button className="btn" onClick={() => ask(question)} disabled={asking || !question.trim()}>
             {asking ? "Thinking..." : "Ask"}
           </button>
         </div>
+
+        <div style={{ marginTop: "0.6rem", display: "flex", alignItems: "center", gap: "1rem", flexWrap: "wrap" }}>
+          {speechSupported && (
+            <label style={{ display: "flex", alignItems: "center", gap: "0.4rem", fontSize: "0.8rem", color: "var(--muted)" }}>
+              <input type="checkbox" checked={speakEnabled} onChange={(e) => setSpeakEnabled(e.target.checked)} />
+              Speak answers aloud
+            </label>
+          )}
+          {speaking && (
+            <button className="btn-secondary btn" style={{ fontSize: "0.75rem", padding: "0.25rem 0.6rem" }} onClick={stopSpeaking}>
+              🔇 Stop speaking
+            </button>
+          )}
+        </div>
+
         {history.length === 0 && (
           <div style={{ marginTop: "0.85rem", display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
             {SUGGESTIONS.map((s) => (
