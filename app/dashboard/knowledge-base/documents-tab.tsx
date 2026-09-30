@@ -241,14 +241,13 @@ export default function DocumentsTab() {
                 </option>
               ))}
               {existingCustomCategories.length > 0 && (
-                <>
-                  <option disabled>──────────</option>
+                <optgroup label="Your categories">
                   {existingCustomCategories.map((c) => (
                     <option key={c} value={c}>
                       {c}
                     </option>
                   ))}
-                </>
+                </optgroup>
               )}
               <option value="Other">Other...</option>
             </select>
