@@ -48,6 +48,17 @@ export async function extractDocumentText(
 
   try {
     if (ext === "pdf") {
+      // pdf-parse's underlying pdfjs-dist expects a browser-style DOMMatrix
+      // global (used internally for text-position matrix math even for
+      // plain text extraction). It normally gets this via the native
+      // @napi-rs/canvas addon, but that addon's platform binary isn't
+      // reliably traced into a serverless function bundle (works in local
+      // dev, fails in production with "DOMMatrix is not defined") — a pure
+      // JS shim sidesteps needing that native binary at all.
+      if (typeof (globalThis as any).DOMMatrix === "undefined") {
+        const { default: DOMMatrixShim } = await import("dommatrix");
+        (globalThis as any).DOMMatrix = DOMMatrixShim;
+      }
       const { PDFParse } = await import("pdf-parse");
       const parser = new PDFParse({ data: buffer });
       const result = await parser.getText();
