@@ -10,7 +10,7 @@ import AllKnowledgeTab from "./all-knowledge-tab";
 import DocumentsTab from "./documents-tab";
 import HealthTab from "./health-tab";
 
-const TABS = ["Overview", "Ask the Brain", "All Knowledge", "Documents", "Knowledge Health"] as const;
+const TABS = ["Overview", "Ask Eleven", "All Knowledge", "Documents", "Knowledge Health"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function KnowledgeBasePage() {
@@ -63,7 +63,7 @@ export default function KnowledgeBasePage() {
     return (
       <>
         <div className="page-header">
-          <h1>🧠 Business Brain</h1>
+          <h1>🧠 Eleven</h1>
         </div>
         <p style={{ color: "var(--muted)" }}>Loading...</p>
       </>
@@ -73,7 +73,7 @@ export default function KnowledgeBasePage() {
   return (
     <>
       <div className="page-header">
-        <h1>🧠 Business Brain</h1>
+        <h1>🧠 Eleven</h1>
         <p>
           The dashboard's shared knowledge, memory, and context layer — documents, SOPs, decisions, people, and
           brand/service knowledge Claude draws on when answering questions or analysing a site. Brand voice for
@@ -89,8 +89,8 @@ export default function KnowledgeBasePage() {
         ))}
       </div>
 
-      {tab === "Overview" && <OverviewTab onQuickAdd={quickAdd} onGoToAsk={() => setTab("Ask the Brain")} />}
-      {tab === "Ask the Brain" && <AskTab onViewSource={viewSource} />}
+      {tab === "Overview" && <OverviewTab onQuickAdd={quickAdd} onGoToAsk={() => setTab("Ask Eleven")} />}
+      {tab === "Ask Eleven" && <AskTab onViewSource={viewSource} />}
       {tab === "All Knowledge" && (
         <AllKnowledgeTab key={allKnowledgeSeed.key} initialType={allKnowledgeSeed.type} initialQuery={allKnowledgeSeed.query} />
       )}

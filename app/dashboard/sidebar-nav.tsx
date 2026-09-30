@@ -105,7 +105,7 @@ export default function SidebarNav() {
     { href: "/dashboard/incidents", label: "Incidents" },
     { href: "/dashboard/security", label: "Security" },
     { href: "/dashboard/claude-design", label: "Claude Design" },
-    ...(isAdmin ? [{ href: "/dashboard/knowledge-base", label: "🧠 Business Brain" }] : []),
+    ...(isAdmin ? [{ href: "/dashboard/knowledge-base", label: "🧠 Eleven" }] : []),
     ...(isManagerOrAbove ? [{ href: "/dashboard/knowledge", label: "Company Knowledge" }] : []),
     ...(isAdmin ? [{ href: "/dashboard/settings", label: "Settings" }] : []),
   ];

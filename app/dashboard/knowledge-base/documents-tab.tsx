@@ -23,7 +23,7 @@ type Document = {
 
 const EXTRACTION_LABEL: Record<ExtractionStatus, string> = {
   pending: "Not extracted yet",
-  done: "Content extracted — searchable by Ask the Brain",
+  done: "Content extracted — searchable by Eleven",
   failed: "Extraction failed",
   unsupported: "File type not supported for extraction",
 };
@@ -147,7 +147,7 @@ export default function DocumentsTab() {
       } else if (data.status === "failed") {
         setMessage(`Extraction failed: ${data.error}`);
       } else {
-        setMessage("Content extracted — it's now searchable by Ask the Brain (marked for review).");
+        setMessage("Content extracted — it's now searchable by Eleven (marked for review).");
       }
     } catch (err: any) {
       setMessage(`Extraction error: ${err.message}`);

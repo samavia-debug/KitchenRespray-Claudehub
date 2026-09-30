@@ -58,7 +58,7 @@ export default function AskTab({ onViewSource }: { onViewSource: (title: string)
       <div className="card" style={{ marginBottom: "1.25rem" }}>
         <div style={{ display: "flex", gap: "0.5rem" }}>
           <input
-            placeholder="Ask the Business Brain anything..."
+            placeholder="Ask Eleven anything..."
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && ask(question)}

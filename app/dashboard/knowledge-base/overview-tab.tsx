@@ -45,7 +45,7 @@ export default function OverviewTab({
   return (
     <>
       <div className="card" style={{ marginBottom: "1.25rem", textAlign: "center", padding: "2rem" }}>
-        <h2 style={{ marginTop: 0 }}>🧠 Ask the Business Brain</h2>
+        <h2 style={{ marginTop: 0 }}>🧠 Ask Eleven</h2>
         <p style={{ color: "var(--muted)", marginBottom: "1.25rem" }}>
           Ask a question in plain English — Claude will answer using everything recorded here, with sources.
         </p>
