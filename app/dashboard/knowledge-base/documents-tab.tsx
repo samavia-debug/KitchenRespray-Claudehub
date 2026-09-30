@@ -6,6 +6,8 @@ import type { WebsiteOption } from "./entry-types";
 
 const BUCKET = "business-brain-documents";
 
+const CATEGORY_OPTIONS = ["HR", "Staff", "Van", "Contracts", "Licences", "General"];
+
 type ExtractionStatus = "pending" | "done" | "failed" | "unsupported";
 
 type Document = {
@@ -46,9 +48,11 @@ export default function DocumentsTab() {
 
   const [title, setTitle] = useState("");
   const [category, setCategory] = useState("");
+  const [customCategory, setCustomCategory] = useState("");
   const [description, setDescription] = useState("");
   const [websiteId, setWebsiteId] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [categoryFilter, setCategoryFilter] = useState("All");
 
   const load = useCallback(async () => {
     const [{ data, error: loadError }, { data: websiteData }] = await Promise.all([
@@ -78,6 +82,8 @@ export default function DocumentsTab() {
       return;
     }
 
+    const resolvedCategory = category === "Other" ? customCategory.trim() : category;
+
     setUploading(true);
     setMessage(null);
 
@@ -102,7 +108,7 @@ export default function DocumentsTab() {
       .from("knowledge_documents")
       .insert({
         title: title.trim(),
-        category: category.trim() || null,
+        category: resolvedCategory || null,
         description: description.trim() || null,
         website_id: websiteId || null,
         file_path: publicUrlData.publicUrl,
@@ -121,6 +127,7 @@ export default function DocumentsTab() {
     setMessage("Document uploaded — extracting its content now...");
     setTitle("");
     setCategory("");
+    setCustomCategory("");
     setDescription("");
     setWebsiteId("");
     setFile(null);
@@ -203,9 +210,23 @@ export default function DocumentsTab() {
           </div>
           <div className="field">
             <label>Category (optional)</label>
-            <input value={category} onChange={(e) => setCategory(e.target.value)} placeholder="e.g. Training, Policy, Pricing" />
+            <select value={category} onChange={(e) => setCategory(e.target.value)}>
+              <option value="">No category</option>
+              {CATEGORY_OPTIONS.map((c) => (
+                <option key={c} value={c}>
+                  {c}
+                </option>
+              ))}
+              <option value="Other">Other...</option>
+            </select>
           </div>
         </div>
+        {category === "Other" && (
+          <div className="field">
+            <label>Custom category</label>
+            <input value={customCategory} onChange={(e) => setCustomCategory(e.target.value)} placeholder="e.g. Training" />
+          </div>
+        )}
         <div className="field">
           <label>Description (optional)</label>
           <textarea rows={2} value={description} onChange={(e) => setDescription(e.target.value)} />
@@ -237,7 +258,22 @@ export default function DocumentsTab() {
           <p style={{ color: "var(--muted)" }}>No documents uploaded yet.</p>
         </div>
       ) : (
-        documents.map((doc) => (
+        <>
+          <div className="tabs" style={{ marginBottom: "1rem" }}>
+            {["All", ...CATEGORY_OPTIONS, ...Array.from(new Set(documents.map((d) => d.category).filter((c): c is string => !!c && !CATEGORY_OPTIONS.includes(c))))].map((c) => (
+              <button key={c} className={categoryFilter === c ? "active" : ""} onClick={() => setCategoryFilter(c)}>
+                {c === "All" ? `All (${documents.length})` : `${c} (${documents.filter((d) => d.category === c).length})`}
+              </button>
+            ))}
+          </div>
+          {documents.filter((d) => categoryFilter === "All" || d.category === categoryFilter).length === 0 && (
+            <div className="card">
+              <p style={{ color: "var(--muted)" }}>No documents in this category yet.</p>
+            </div>
+          )}
+          {documents
+            .filter((d) => categoryFilter === "All" || d.category === categoryFilter)
+            .map((doc) => (
           <div key={doc.id} className="card" style={{ marginBottom: "0.75rem" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "0.75rem" }}>
               <div>
@@ -274,7 +310,8 @@ export default function DocumentsTab() {
               </div>
             </div>
           </div>
-        ))
+            ))}
+        </>
       )}
     </>
   );
