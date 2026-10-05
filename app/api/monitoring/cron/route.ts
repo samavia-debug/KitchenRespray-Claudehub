@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { runAndRecordCheck, runAndRecordSecurityCheck } from "@/lib/monitoring/record";
 import { syncGoogleConnections } from "@/lib/google/sync";
+import { isConnecteamConfigured } from "@/lib/connecteam/client";
+import { getConnecteamStatus, syncConnecteamStaff } from "@/lib/connecteam/sync";
 import { notifySlack, notifyWhatsApp } from "@/lib/monitoring/notify";
 
 const CONCURRENCY = 5;
@@ -23,6 +25,8 @@ const MIN_SYNC_BUDGET_MS = 15_000;
 // fetches from stacking onto every single cron run.
 const SECURITY_SCAN_STALE_HOURS = 6;
 const MIN_SECURITY_BUDGET_MS = 10_000;
+const CONNECTEAM_STALE_HOURS = 20;
+const MIN_CONNECTEAM_BUDGET_MS = 10_000;
 
 function isAuthorized(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -158,6 +162,27 @@ async function runCron(request: NextRequest) {
     }
   }
 
+  // Staff data changes rarely, so Connecteam is re-synced about daily. Its
+  // own try/catch keeps a Connecteam problem (expired key, API outage) from
+  // ever affecting the health checks or Google sync above.
+  let connecteamSync: { synced?: number; error?: string; skipped?: string } = { skipped: "not connected" };
+  if (isConnecteamConfigured()) {
+    try {
+      const status = await getConnecteamStatus();
+      const ageHours = status.lastSyncedAt ? (Date.now() - new Date(status.lastSyncedAt).getTime()) / 3_600_000 : Infinity;
+      if (ageHours < CONNECTEAM_STALE_HOURS) {
+        connecteamSync = { skipped: "fresh" };
+      } else if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_CONNECTEAM_BUDGET_MS) {
+        connecteamSync = { skipped: "out of time budget" };
+      } else {
+        const result = await syncConnecteamStaff();
+        connecteamSync = { synced: result.total };
+      }
+    } catch (err: any) {
+      connecteamSync = { error: err.message };
+    }
+  }
+
   return NextResponse.json({
     checkedCount: results.length,
     skippedCount: (websites?.length || 0) - due.length,
@@ -166,6 +191,7 @@ async function runCron(request: NextRequest) {
     securitySkipped: securityDue.length - securityResults.length,
     securityResults,
     googleSync,
+    connecteamSync,
   });
 }
 

@@ -7,7 +7,6 @@ import { createClient } from "@/lib/supabase/client";
 
 const comingSoon = [
   "Social Media",
-  "Connecteam",
 ];
 
 type SyncFreshness = "fresh" | "stale" | "very-stale";

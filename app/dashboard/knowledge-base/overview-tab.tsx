@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { ENTRY_TYPES, ENTRY_TYPE_LABELS, type EntryType, type KnowledgeEntry } from "./entry-types";
+import ConnecteamCard from "./connecteam-card";
 
 const SNAPSHOT_TYPES: EntryType[] = ["brand", "service", "person", "sop", "decision", "document"];
 
@@ -53,6 +54,8 @@ export default function OverviewTab({
           Ask a question
         </button>
       </div>
+
+      <ConnecteamCard onSynced={load} />
 
       <div className="stat-grid" style={{ marginBottom: "1.25rem" }}>
         <div className="stat-card">
