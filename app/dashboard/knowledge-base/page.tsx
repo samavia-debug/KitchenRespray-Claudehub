@@ -8,9 +8,10 @@ import OverviewTab from "./overview-tab";
 import AskTab from "./ask-tab";
 import AllKnowledgeTab from "./all-knowledge-tab";
 import DocumentsTab from "./documents-tab";
+import StaffTab from "./staff-tab";
 import HealthTab from "./health-tab";
 
-const TABS = ["Overview", "Ask Eleven", "All Knowledge", "Documents", "Knowledge Health"] as const;
+const TABS = ["Overview", "Ask Eleven", "All Knowledge", "Documents", "Staff", "Knowledge Health"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function KnowledgeBasePage() {
@@ -95,6 +96,7 @@ export default function KnowledgeBasePage() {
         <AllKnowledgeTab key={allKnowledgeSeed.key} initialType={allKnowledgeSeed.type} initialQuery={allKnowledgeSeed.query} />
       )}
       {tab === "Documents" && <DocumentsTab />}
+      {tab === "Staff" && <StaffTab />}
       {tab === "Knowledge Health" && <HealthTab />}
     </>
   );

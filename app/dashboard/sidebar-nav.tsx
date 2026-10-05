@@ -105,6 +105,7 @@ export default function SidebarNav() {
     { href: "/dashboard/security", label: "Security" },
     { href: "/dashboard/claude-design", label: "Claude Design" },
     ...(isAdmin ? [{ href: "/dashboard/knowledge-base", label: "🧠 Eleven" }] : []),
+    ...(isAdmin ? [{ href: "/dashboard/connecteam", label: "👥 Connecteam" }] : []),
     ...(isManagerOrAbove ? [{ href: "/dashboard/knowledge", label: "Company Knowledge" }] : []),
     ...(isAdmin ? [{ href: "/dashboard/settings", label: "Settings" }] : []),
   ];
@@ -122,7 +123,10 @@ export default function SidebarNav() {
               ? pathname === link.href
                 ? "active"
                 : ""
-              : pathname.startsWith(link.href)
+              : // Exact match or a true sub-path: a bare startsWith made
+                // /dashboard/knowledge (Company Knowledge) also light up on
+                // /dashboard/knowledge-base (Eleven).
+                pathname === link.href || pathname.startsWith(`${link.href}/`)
               ? "active"
               : ""
           }

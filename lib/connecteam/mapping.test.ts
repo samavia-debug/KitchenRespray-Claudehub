@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildStaffEntries, buildStaffEntry, CONNECTEAM_SOURCE } from "./mapping";
+import { buildStaffEntries, buildStaffEntry, CONNECTEAM_SOURCE, parseStaffContent } from "./mapping";
 import type { ConnecteamUser } from "./client";
 
 const maria: ConnecteamUser = {
@@ -70,6 +70,33 @@ describe("buildStaffEntry", () => {
   it("falls back to email, then the user id, when a person has no name", () => {
     expect(buildStaffEntry({ userId: 5, email: "a@b.ie" }, new Map()).title).toBe("a@b.ie");
     expect(buildStaffEntry({ userId: 5 }, new Map()).title).toBe("Connecteam user 5");
+  });
+});
+
+describe("owner and parsing", () => {
+  it("sets an owner so Knowledge Health doesn't flag every synced person", () => {
+    expect(buildStaffEntry(maria, new Map()).owner_name).toBe("Connecteam");
+  });
+
+  it("reads a synced entry back into the same fields it was built from", () => {
+    const entry = buildStaffEntry(maria, new Map([[202, "Philip Kane"]]));
+    const details = parseStaffContent(entry.content);
+    expect(details).toMatchObject({
+      access: "Manager",
+      jobTitle: "Office Manager",
+      department: "Admin, Accounts",
+      team: "Head Office",
+      manager: "Philip Kane",
+      email: "maria@example.com",
+      phone: "+353871234567",
+      former: false,
+    });
+    expect(details.employeeId).toBeUndefined();
+  });
+
+  it("flags former staff when parsing", () => {
+    const entry = buildStaffEntry({ ...maria, isArchived: true }, new Map());
+    expect(parseStaffContent(entry.content).former).toBe(true);
   });
 });
 
