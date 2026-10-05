@@ -36,6 +36,7 @@ export async function POST() {
       .from("google_connections")
       .select("website_id, external_account_email")
       .eq("service", service)
+      .order("connected_at", { ascending: false })
       .limit(1)
       .maybeSingle();
 
