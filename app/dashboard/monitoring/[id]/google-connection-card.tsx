@@ -165,6 +165,9 @@ export default function GoogleConnectionCard({
               <button className="btn" onClick={syncNow} disabled={syncing}>
                 {syncing ? "Syncing..." : "Sync now"}
               </button>
+              <a href={`/api/google/connect?websiteId=${websiteId}&service=${service}`} className="btn-secondary btn">
+                Reconnect
+              </a>
               <button className="btn-secondary btn" onClick={disconnect} disabled={disconnecting}>
                 {disconnecting ? "Disconnecting..." : "Disconnect"}
               </button>
