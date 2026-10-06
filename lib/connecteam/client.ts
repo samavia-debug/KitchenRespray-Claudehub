@@ -20,6 +20,32 @@ export type ConnecteamUser = {
   customFields?: ConnecteamCustomField[];
 };
 
+export type FormQuestion = {
+  questionId: string;
+  title: string;
+  questionType: string;
+  allAnswers?: { yesNoOptionId?: number; multipleChoiceOptionId?: string; text: string }[];
+};
+
+export type ConnecteamForm = { formId: number; formName: string; questions: FormQuestion[] };
+
+export type FormAnswer = {
+  questionId: string;
+  questionType: string;
+  value?: string;
+  selectedIndex?: number;
+  selectedAnswers?: { text: string }[];
+  timestamp?: number;
+};
+
+export type FormSubmission = {
+  formSubmissionId: string;
+  formId: number;
+  submissionTimestamp: number;
+  submittingUserId?: number;
+  answers: FormAnswer[];
+};
+
 export function isConnecteamConfigured(): boolean {
   return !!process.env.CONNECTEAM_API_KEY;
 }
@@ -57,6 +83,30 @@ export async function fetchAllConnecteamUsers(): Promise<ConnecteamUser[]> {
     all.push(...users);
     if (users.length < PAGE_SIZE) break;
     offset += users.length;
+  }
+
+  return all;
+}
+
+export async function fetchConnecteamForm(formId: number): Promise<ConnecteamForm | null> {
+  const body = await connecteamGet<{ data?: { forms?: ConnecteamForm[] } }>("/forms/v1/forms");
+  return body.data?.forms?.find((f) => f.formId === formId) ?? null;
+}
+
+/** Every submission of one form, oldest and newest alike, 100 per page. */
+export async function fetchFormSubmissions(formId: number): Promise<FormSubmission[]> {
+  const pageSize = 100;
+  const all: FormSubmission[] = [];
+  let offset = 0;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const body = await connecteamGet<{ data?: { formSubmissions?: FormSubmission[] } }>(
+      `/forms/v1/forms/${formId}/form-submissions?limit=${pageSize}&offset=${offset}`
+    );
+    const batch = body.data?.formSubmissions ?? [];
+    all.push(...batch);
+    if (batch.length < pageSize) break;
+    offset += batch.length;
   }
 
   return all;

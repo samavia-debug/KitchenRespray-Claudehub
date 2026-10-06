@@ -4,6 +4,7 @@ import { runAndRecordCheck, runAndRecordSecurityCheck } from "@/lib/monitoring/r
 import { syncGoogleConnections } from "@/lib/google/sync";
 import { isConnecteamConfigured } from "@/lib/connecteam/client";
 import { getConnecteamStatus, syncConnecteamStaff } from "@/lib/connecteam/sync";
+import { getVehicleStatus, syncVehicleInspections } from "@/lib/connecteam/vehicles-sync";
 import { notifySlack, notifyWhatsApp } from "@/lib/monitoring/notify";
 
 const CONCURRENCY = 5;
@@ -26,6 +27,7 @@ const MIN_SYNC_BUDGET_MS = 15_000;
 const SECURITY_SCAN_STALE_HOURS = 6;
 const MIN_SECURITY_BUDGET_MS = 10_000;
 const CONNECTEAM_STALE_HOURS = 20;
+const VEHICLES_STALE_HOURS = 3;
 const MIN_CONNECTEAM_BUDGET_MS = 10_000;
 
 function isAuthorized(request: NextRequest): boolean {
@@ -183,6 +185,26 @@ async function runCron(request: NextRequest) {
     }
   }
 
+  // Vehicle inspections arrive through the week and "who hasn't submitted"
+  // is only useful if fairly current, so this refreshes every few hours.
+  let vehiclesSync: { synced?: number; error?: string; skipped?: string } = { skipped: "not connected" };
+  if (isConnecteamConfigured()) {
+    try {
+      const status = await getVehicleStatus();
+      const ageHours = status.lastSyncedAt ? (Date.now() - new Date(status.lastSyncedAt).getTime()) / 3_600_000 : Infinity;
+      if (ageHours < VEHICLES_STALE_HOURS) {
+        vehiclesSync = { skipped: "fresh" };
+      } else if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_CONNECTEAM_BUDGET_MS) {
+        vehiclesSync = { skipped: "out of time budget" };
+      } else {
+        const result = await syncVehicleInspections();
+        vehiclesSync = { synced: result.total };
+      }
+    } catch (err: any) {
+      vehiclesSync = { error: err.message };
+    }
+  }
+
   return NextResponse.json({
     checkedCount: results.length,
     skippedCount: (websites?.length || 0) - due.length,
@@ -192,6 +214,7 @@ async function runCron(request: NextRequest) {
     securityResults,
     googleSync,
     connecteamSync,
+    vehiclesSync,
   });
 }
 
