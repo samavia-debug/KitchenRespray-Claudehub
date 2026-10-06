@@ -4,11 +4,15 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import TodayView from "./today-view";
+import ScorecardView from "./scorecard-view";
+
+const SECTIONS = ["Today", "Team scorecard"] as const;
 
 export default function OperationsPage() {
   const supabase = createClient();
   const router = useRouter();
   const [authorized, setAuthorized] = useState(false);
+  const [section, setSection] = useState<(typeof SECTIONS)[number]>("Today");
 
   useEffect(() => {
     async function init() {
@@ -38,9 +42,27 @@ export default function OperationsPage() {
     <>
       <div className="page-header">
         <h1>📊 Operations</h1>
-        <p>What is happening today across the team: who is working, who is late, what needs attention. Click anyone or any job type to drill in.</p>
+        <p>
+          What is happening today across the team, and how each branch and team is doing week by week: who is working, who is late, whether
+          vehicle checks and clock-outs are being done.
+        </p>
       </div>
-      {authorized ? <TodayView /> : <p style={{ color: "var(--muted)" }}>Loading...</p>}
+
+      {authorized ? (
+        <>
+          <div className="tabs">
+            {SECTIONS.map((s) => (
+              <button key={s} className={section === s ? "active" : ""} onClick={() => setSection(s)}>
+                {s}
+              </button>
+            ))}
+          </div>
+          {section === "Today" && <TodayView />}
+          {section === "Team scorecard" && <ScorecardView />}
+        </>
+      ) : (
+        <p style={{ color: "var(--muted)" }}>Loading...</p>
+      )}
     </>
   );
 }

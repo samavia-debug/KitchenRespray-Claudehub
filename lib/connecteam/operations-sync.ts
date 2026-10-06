@@ -10,6 +10,7 @@ import {
   type PersonDetail,
   type TodayOverview,
 } from "./operations";
+import { formatScorecardContext, summariseScorecard, type GroupBy, type ScoreInspection, type ScorePpe, type ScorecardOverview } from "./scorecard";
 import { getScheduleStatus, getTimeClockStatus, loadStaffDetails, syncSchedule, syncTimeClock } from "./time-sync";
 
 const DAY = 86_400_000;
@@ -123,6 +124,74 @@ export async function getTodayContextForEleven(): Promise<string> {
   try {
     const { overview } = await getTodayOverview();
     return overview.people.length === 0 ? "" : formatTodayContext(overview);
+  } catch {
+    return "";
+  }
+}
+
+// ---- Team scorecard ----
+
+/** Reads once, so several groupings (branch, team, department) can share it. */
+async function loadScorecardData() {
+  const supabase = createServiceClient();
+  const now = Date.now();
+  const since = new Date(now - 70 * DAY).toISOString(); // nine weeks plus a margin
+  const sinceDrivers = new Date(now - 95 * DAY).toISOString(); // the "who does vehicle checks" window
+
+  const shifts = await fetchAllRows<OpsShift>((from, to) =>
+    supabase
+      .from("time_clock_shifts")
+      .select(SHIFT_COLUMNS)
+      .or(`started_at.gte.${since},ended_at.is.null`)
+      .order("started_at", { ascending: false })
+      .order("shift_id")
+      .range(from, to)
+  );
+  const scheduled = await fetchAllRows<OpsScheduled>((from, to) =>
+    supabase
+      .from("scheduled_shifts")
+      .select(SCHEDULED_COLUMNS)
+      .gte("start_at", since)
+      .lte("start_at", new Date(now + DAY).toISOString())
+      .order("start_at", { ascending: false })
+      .order("shift_id")
+      .range(from, to)
+  );
+  const inspections = await fetchAllRows<ScoreInspection>((from, to) =>
+    supabase
+      .from("vehicle_inspections")
+      .select("submitter_user_id, submitted_at, safety_equipment_ok, condition_ok, defects")
+      .gte("submitted_at", sinceDrivers)
+      .order("submitted_at", { ascending: false })
+      .order("submission_id")
+      .range(from, to)
+  );
+  const ppe = await fetchAllRows<ScorePpe>((from, to) =>
+    supabase
+      .from("ppe_requests")
+      .select("submitter_user_id, submitted_at, status, status_updated_at")
+      .gte("submitted_at", since)
+      .order("submitted_at", { ascending: false })
+      .order("submission_id")
+      .range(from, to)
+  );
+  const staff = await loadStaffDetails();
+  return { shifts, scheduled, inspections, ppe, staff, now };
+}
+
+export async function getScorecard(groupBy: GroupBy): Promise<ScorecardOverview> {
+  const d = await loadScorecardData();
+  return summariseScorecard(groupBy, d.shifts, d.scheduled, d.inspections, d.ppe, d.staff, d.now);
+}
+
+/** Branch and team, the two groupings people actually ask about; empty when tables don't exist yet. */
+export async function getScorecardContextForEleven(): Promise<string> {
+  try {
+    const d = await loadScorecardData();
+    if (d.shifts.length === 0) return "";
+    return formatScorecardContext(
+      (["branch", "team"] as GroupBy[]).map((g) => summariseScorecard(g, d.shifts, d.scheduled, d.inspections, d.ppe, d.staff, d.now))
+    );
   } catch {
     return "";
   }

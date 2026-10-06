@@ -5,7 +5,7 @@ import { sum, percentChange, sinceDaysAgo, splitLastNDays } from "@/lib/monitori
 import { getVehicleContextForEleven } from "@/lib/connecteam/vehicles-sync";
 import { getPpeContextForEleven } from "@/lib/connecteam/ppe-sync";
 import { getTimeClockContextForEleven, getTimeOffContextForEleven } from "@/lib/connecteam/time-sync";
-import { getTodayContextForEleven } from "@/lib/connecteam/operations-sync";
+import { getScorecardContextForEleven, getTodayContextForEleven } from "@/lib/connecteam/operations-sync";
 
 /**
  * "Ask Eleven" — answers a natural-language question using
@@ -138,12 +138,13 @@ Sites analysed by Claude today: ${
     ? performanceLines.join("\n")
     : "No sites have connected Analytics/Search Console data yet.";
 
-  const [vehicleBlock, ppeBlock, clockBlock, timeOffBlock, todayBlock] = await Promise.all([
+  const [vehicleBlock, ppeBlock, clockBlock, timeOffBlock, todayBlock, scorecardBlock] = await Promise.all([
     getVehicleContextForEleven(),
     getPpeContextForEleven(),
     getTimeClockContextForEleven(),
     getTimeOffContextForEleven(),
     getTodayContextForEleven(),
+    getScorecardContextForEleven(),
   ]);
 
   const systemPrompt = `You are "Eleven", a company's internal dashboard assistant — you answer staff questions using ONLY the company's own recorded knowledge base, website/brand list, today's real dashboard activity, and real site performance data given below. You are not a general assistant; you have no other knowledge of this specific company beyond what's provided here.
@@ -159,6 +160,7 @@ Critical rules:
 - For questions about tools, PPE, equipment or supply requests — what was requested, what is still open, who asked, how often an item is requested, or spray suit sizes — answer from the TOOLS & PPE REQUESTS section. Its lists are already worked out, so quote them, state the definition used (a request is only done once a manager marks it Done; older open requests are probably forgotten), and remember each request has one quantity even when several items are ticked, so never multiply or total units across multi-item requests.
 - For questions about hours worked, clock-ins, who forgot to clock out, who is clocked in now, or how time was spent — answer from the TIME CLOCK section. The per-person hours, job-type totals and "looks wrong" lists are already worked out, so quote them and say which period (this week, last month, etc.) and rule you used. Never present hours as completed jobs, turnover or pay: the clock only records where time was spent, and it holds no pay data.
 - For questions about TODAY — who is working now, who is late, who hasn't clocked in, who forgot to clock out, what is happening today, how the day is going — answer from the OPERATIONS TODAY section, quoting its lists and the definition used (e.g. what counts as late). Say how fresh it is. Never claim anyone is "on a job site": the data has no location. If the checklist figure looks low, explain that few checklist items are ever ticked, so it understates the work done.
+- For questions comparing branches or teams, or asking which team is doing best or worst at something (late arrivals, vehicle checks, forgotten clock-outs, safety equipment, PPE speed, hours) — answer from the TEAM SCORECARD section, quoting its figures for the latest full week and the previous week, and say how each figure is defined. Don't rank on a figure with a tiny base (e.g. 1 of 1 drivers); say how small the group is.
 - For questions about holidays, sick leave, who is off today or soon, or how many days someone has taken — answer from the TIME OFF section, quoting its lists, and keep "Bank Holidays" separate from "Holidays".
 - After your answer, list the sources you actually used as a "Sources:" section, citing each by its [id:...] tag and title exactly as given for knowledge entries. Activity/performance/website records don't have [id:...] tags — describe them in the answer itself but don't fabricate a source tag for them.
 - Keep the answer itself concise and directly responsive to the question.
@@ -171,6 +173,9 @@ ${performanceBlock}
 
 VEHICLE INSPECTIONS:
 ${vehicleBlock || "Not available — vehicle inspection data hasn't been synced yet."}
+
+TEAM SCORECARD (weekly, by branch and team):
+${scorecardBlock || "Not available — the clock, rota or vehicle data hasn't been synced yet."}
 
 OPERATIONS TODAY:
 ${todayBlock || "Not available — today's clock and rota data hasn't been synced yet."}

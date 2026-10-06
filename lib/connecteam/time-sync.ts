@@ -154,7 +154,7 @@ export async function loadStaffDetails(): Promise<StaffDetail[]> {
   return (data || [])
     .map((e) => {
       const d = parseStaffContent((e.content as string) ?? "");
-      return { userId: Number(e.external_id), name: e.title as string, former: e.status === "archived", role: d.role, team: d.team };
+      return { userId: Number(e.external_id), name: e.title as string, former: e.status === "archived", role: d.role, team: d.team, branch: d.branch, department: d.department };
     })
     .filter((s) => Number.isFinite(s.userId));
 }

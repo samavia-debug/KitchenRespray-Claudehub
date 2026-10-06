@@ -16,7 +16,7 @@ export const CLOCK_RULES = {
   flaggedWindowDays: 30,
 } as const;
 
-export type StaffDetail = StaffRef & { role?: string; team?: string };
+export type StaffDetail = StaffRef & { role?: string; team?: string; branch?: string; department?: string };
 export type JobInfo = { job_id: string; title: string };
 export type ClockShiftInput = Pick<ShiftRow, "shift_id" | "user_id" | "started_at" | "ended_at" | "job_id" | "start_source">;
 
@@ -28,7 +28,7 @@ export function dublinDateKey(ms: number): string {
 
 const keyToMs = (key: string) => Date.parse(`${key}T00:00:00Z`);
 export const addDays = (key: string, n: number) => new Date(keyToMs(key) + n * DAY).toISOString().slice(0, 10);
-const mondayOf = (key: string) => addDays(key, -((new Date(keyToMs(key)).getUTCDay() + 6) % 7));
+export const mondayOf = (key: string) => addDays(key, -((new Date(keyToMs(key)).getUTCDay() + 6) % 7));
 const monthStart = (key: string) => `${key.slice(0, 7)}-01`;
 const prevMonthRange = (key: string) => {
   const lastDay = addDays(monthStart(key), -1);
