@@ -10,9 +10,10 @@ import AllKnowledgeTab from "./all-knowledge-tab";
 import DocumentsTab from "./documents-tab";
 import StaffTab from "./staff-tab";
 import VehiclesTab from "./vehicles-tab";
+import PpeTab from "./ppe-tab";
 import HealthTab from "./health-tab";
 
-const TABS = ["Overview", "Ask Eleven", "All Knowledge", "Documents", "Staff", "Vehicles", "Knowledge Health"] as const;
+const TABS = ["Overview", "Ask Eleven", "All Knowledge", "Documents", "Staff", "Vehicles", "Tools & PPE", "Knowledge Health"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function KnowledgeBasePage() {
@@ -99,6 +100,7 @@ export default function KnowledgeBasePage() {
       {tab === "Documents" && <DocumentsTab />}
       {tab === "Staff" && <StaffTab />}
       {tab === "Vehicles" && <VehiclesTab />}
+      {tab === "Tools & PPE" && <PpeTab />}
       {tab === "Knowledge Health" && <HealthTab />}
     </>
   );

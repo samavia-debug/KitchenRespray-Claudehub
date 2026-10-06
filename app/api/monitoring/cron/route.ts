@@ -5,6 +5,7 @@ import { syncGoogleConnections } from "@/lib/google/sync";
 import { isConnecteamConfigured } from "@/lib/connecteam/client";
 import { getConnecteamStatus, syncConnecteamStaff } from "@/lib/connecteam/sync";
 import { getVehicleStatus, syncVehicleInspections } from "@/lib/connecteam/vehicles-sync";
+import { getPpeStatus, syncPpeRequests } from "@/lib/connecteam/ppe-sync";
 import { notifySlack, notifyWhatsApp } from "@/lib/monitoring/notify";
 
 const CONCURRENCY = 5;
@@ -28,6 +29,7 @@ const SECURITY_SCAN_STALE_HOURS = 6;
 const MIN_SECURITY_BUDGET_MS = 10_000;
 const CONNECTEAM_STALE_HOURS = 20;
 const VEHICLES_STALE_HOURS = 3;
+const PPE_STALE_HOURS = 3;
 const MIN_CONNECTEAM_BUDGET_MS = 10_000;
 
 function isAuthorized(request: NextRequest): boolean {
@@ -205,6 +207,26 @@ async function runCron(request: NextRequest) {
     }
   }
 
+  // Tools & PPE requests: the manager marks them Done in Connecteam, so a
+  // fairly frequent refresh keeps "what is still open" honest.
+  let ppeSync: { synced?: number; error?: string; skipped?: string } = { skipped: "not connected" };
+  if (isConnecteamConfigured()) {
+    try {
+      const status = await getPpeStatus();
+      const ageHours = status.lastSyncedAt ? (Date.now() - new Date(status.lastSyncedAt).getTime()) / 3_600_000 : Infinity;
+      if (ageHours < PPE_STALE_HOURS) {
+        ppeSync = { skipped: "fresh" };
+      } else if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_CONNECTEAM_BUDGET_MS) {
+        ppeSync = { skipped: "out of time budget" };
+      } else {
+        const result = await syncPpeRequests();
+        ppeSync = { synced: result.total };
+      }
+    } catch (err: any) {
+      ppeSync = { error: err.message };
+    }
+  }
+
   return NextResponse.json({
     checkedCount: results.length,
     skippedCount: (websites?.length || 0) - due.length,
@@ -215,6 +237,7 @@ async function runCron(request: NextRequest) {
     googleSync,
     connecteamSync,
     vehiclesSync,
+    ppeSync,
   });
 }
 

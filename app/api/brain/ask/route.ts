@@ -3,6 +3,7 @@ import { requireRole } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/service";
 import { sum, percentChange, sinceDaysAgo, splitLastNDays } from "@/lib/monitoring/aggregate";
 import { getVehicleContextForEleven } from "@/lib/connecteam/vehicles-sync";
+import { getPpeContextForEleven } from "@/lib/connecteam/ppe-sync";
 
 /**
  * "Ask Eleven" — answers a natural-language question using
@@ -135,7 +136,7 @@ Sites analysed by Claude today: ${
     ? performanceLines.join("\n")
     : "No sites have connected Analytics/Search Console data yet.";
 
-  const vehicleBlock = await getVehicleContextForEleven();
+  const [vehicleBlock, ppeBlock] = await Promise.all([getVehicleContextForEleven(), getPpeContextForEleven()]);
 
   const systemPrompt = `You are "Eleven", a company's internal dashboard assistant — you answer staff questions using ONLY the company's own recorded knowledge base, website/brand list, today's real dashboard activity, and real site performance data given below. You are not a general assistant; you have no other knowledge of this specific company beyond what's provided here.
 
@@ -147,6 +148,7 @@ Critical rules:
 - For questions about "today", "updates", "what's new", or "what happened" — answer directly from the TODAY'S ACTIVITY section. If every line in it says "None", say plainly that nothing notable happened today rather than padding the answer.
 - For questions comparing or ranking sites/brands/services by performance ("which is performing best", "which is growing") — use the SITE PERFORMANCE section's real sessions/conversions/clicks figures and % changes. Combine with knowledge entries where a site's knowledge entries describe what service(s) it offers, so you can name the service, not just the site, when the knowledge base makes that connection explicit — don't guess which service drove a number if it isn't recorded.
 - For questions about vans, vehicles, inspections, defects, odometer readings, or who has / hasn't submitted their inspection — answer from the VEHICLE INSPECTIONS section. Its lists and counts are already worked out, so quote them rather than recounting, and say which definition applies (e.g. what "regular driver" or "overdue" means). If that section says it's unavailable, say the vehicle data isn't synced yet. Registrations are typed by hand, so treat different spellings of one plate as the same van, and point out likely typos if a one-off registration looks like a mistyped regular one.
+- For questions about tools, PPE, equipment or supply requests — what was requested, what is still open, who asked, how often an item is requested, or spray suit sizes — answer from the TOOLS & PPE REQUESTS section. Its lists are already worked out, so quote them, state the definition used (a request is only done once a manager marks it Done; older open requests are probably forgotten), and remember each request has one quantity even when several items are ticked, so never multiply or total units across multi-item requests.
 - After your answer, list the sources you actually used as a "Sources:" section, citing each by its [id:...] tag and title exactly as given for knowledge entries. Activity/performance/website records don't have [id:...] tags — describe them in the answer itself but don't fabricate a source tag for them.
 - Keep the answer itself concise and directly responsive to the question.
 
@@ -158,6 +160,9 @@ ${performanceBlock}
 
 VEHICLE INSPECTIONS:
 ${vehicleBlock || "Not available — vehicle inspection data hasn't been synced yet."}
+
+TOOLS & PPE REQUESTS:
+${ppeBlock || "Not available — tools & PPE request data hasn't been synced yet."}
 
 KNOWLEDGE BASE ENTRIES:
 ${knowledgeBlock}

@@ -46,7 +46,7 @@ export async function getVehicleStatus(): Promise<VehicleStatus> {
   return { configured: isConnecteamConfigured(), lastSyncedAt: data?.[0]?.synced_at ?? null, reports: count ?? 0 };
 }
 
-async function loadStaff(): Promise<StaffRef[]> {
+export async function loadStaff(): Promise<StaffRef[]> {
   const supabase = createServiceClient();
   const { data } = await supabase
     .from("knowledge_entries")

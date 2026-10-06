@@ -36,6 +36,15 @@ export type FormAnswer = {
   selectedIndex?: number;
   selectedAnswers?: { text: string }[];
   timestamp?: number;
+  inputValue?: number;
+};
+
+export type ManagerField = {
+  managerFieldId: string;
+  managerFieldType: string;
+  note?: string;
+  status?: { name: string };
+  lastUpdatedTimestamp?: number;
 };
 
 export type FormSubmission = {
@@ -44,6 +53,7 @@ export type FormSubmission = {
   submissionTimestamp: number;
   submittingUserId?: number;
   answers: FormAnswer[];
+  managerFields?: ManagerField[];
 };
 
 export function isConnecteamConfigured(): boolean {
