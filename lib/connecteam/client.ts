@@ -193,3 +193,40 @@ export async function fetchTimeOffRequests(startDate: string, endDate: string): 
 
   return all;
 }
+
+export type ConnecteamScheduler = { schedulerId: number; name: string; isArchived?: boolean };
+
+export type ScheduledShift = {
+  id: string;
+  startTime: number;
+  endTime: number;
+  assignedUserIds?: number[];
+  isOpenShift?: boolean;
+  isPublished?: boolean;
+  jobId?: string;
+  tasks?: { id: string; title: string; isComplete: boolean }[];
+};
+
+export async function fetchSchedulers(): Promise<ConnecteamScheduler[]> {
+  const body = await connecteamGet<{ data?: { schedulers?: ConnecteamScheduler[] } }>("/scheduler/v1/schedulers");
+  return body.data?.schedulers ?? [];
+}
+
+/** Scheduled (rota) shifts starting between two unix times, 500 per page. */
+export async function fetchScheduledShifts(schedulerId: number, startTime: number, endTime: number): Promise<ScheduledShift[]> {
+  const pageSize = 500;
+  const all: ScheduledShift[] = [];
+  let offset = 0;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const body = await connecteamGet<{ data?: { shifts?: ScheduledShift[] } }>(
+      `/scheduler/v1/schedulers/${schedulerId}/shifts?startTime=${startTime}&endTime=${endTime}&limit=${pageSize}&offset=${offset}`
+    );
+    const batch = body.data?.shifts ?? [];
+    all.push(...batch);
+    if (batch.length < pageSize) break;
+    offset += batch.length;
+  }
+
+  return all;
+}

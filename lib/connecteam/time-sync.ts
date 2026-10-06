@@ -2,6 +2,8 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { fetchAllRows } from "@/lib/supabase/paginate";
 import {
   fetchJobs,
+  fetchScheduledShifts,
+  fetchSchedulers,
   fetchTimeActivities,
   fetchTimeClocks,
   fetchTimeOffPolicyTypes,
@@ -11,6 +13,7 @@ import {
 import { CONNECTEAM_SOURCE, parseStaffContent } from "./mapping";
 import { dateWindows, parseShifts, type ShiftRow } from "./time-clock";
 import { formatClockContext, summariseClock, type ClockOverview, type ClockShiftInput, type StaffDetail } from "./time-clock-summary";
+import { parseScheduledShifts, type ScheduledShiftRow } from "./schedule";
 import { parseTimeOffRequest, type TimeOffRow } from "./time-off";
 import { formatTimeOffContext, summariseTimeOff, type TimeOffOverview } from "./time-off-summary";
 
@@ -23,7 +26,9 @@ const ID_CHUNK = 100;
 const CLOCK_WINDOW_DAYS = 60;
 const TIME_OFF_WINDOW_DAYS = 360;
 const CLOCK_BACKFILL_DAYS = 420;
-const CLOCK_ROUTINE_DAYS = 45;
+// Re-read the last three weeks each time: cheap (two calls) so it can run every 30 minutes,
+// and long enough to pick up a manager correcting a missed clock-out.
+const CLOCK_ROUTINE_DAYS = 21;
 const FETCH_PARALLEL = 4;
 
 async function upsertInChunks(table: string, rows: Record<string, unknown>[], onConflict: string) {
@@ -203,4 +208,54 @@ export async function getTimeOffContextForEleven(): Promise<string> {
   } catch {
     return "";
   }
+}
+
+// ---- Rota (scheduled shifts) ----
+
+export type ScheduleSyncResult = { shifts: number; removed: number; backfilled: boolean };
+
+/**
+ * Reads the rota from about 4 months back to 3 months ahead the first time,
+ * then 3 weeks back to 3 months ahead. A shift taken off the rota simply stops
+ * being returned, so afterwards any stored shift inside the window that wasn't
+ * returned is removed; otherwise it would show as someone who never turned up.
+ */
+export async function syncSchedule(): Promise<ScheduleSyncResult> {
+  const backfill = (await rowCount("scheduled_shifts", "shift_id")) === 0;
+  const nowSec = Math.floor(Date.now() / 1000);
+  const startSec = nowSec - (backfill ? 120 : 21) * 86_400;
+  const endSec = nowSec + 90 * 86_400;
+
+  const schedulers = (await fetchSchedulers()).filter((s) => !s.isArchived);
+  const byId = new Map<string, ScheduledShiftRow>();
+  for (const scheduler of schedulers) {
+    const shifts = await fetchScheduledShifts(scheduler.schedulerId, startSec, endSec);
+    for (const row of parseScheduledShifts(scheduler.schedulerId, shifts)) byId.set(row.shift_id, row);
+  }
+
+  const syncedAt = new Date().toISOString();
+  await upsertInChunks("scheduled_shifts", Array.from(byId.values()).map((r) => ({ ...r, synced_at: syncedAt })), "shift_id");
+
+  const supabase = createServiceClient();
+  const stored = await fetchAllRows<{ shift_id: string }>((from, to) =>
+    supabase
+      .from("scheduled_shifts")
+      .select("shift_id")
+      .gte("start_at", new Date(startSec * 1000).toISOString())
+      .lte("start_at", new Date(endSec * 1000).toISOString())
+      .order("shift_id")
+      .range(from, to)
+  );
+  // An empty answer is far more likely an API hiccup than a rota with no shifts.
+  const gone = byId.size === 0 ? [] : stored.map((r) => r.shift_id).filter((id) => !byId.has(id));
+  for (let i = 0; i < gone.length; i += ID_CHUNK) {
+    const { error } = await supabase.from("scheduled_shifts").delete().in("shift_id", gone.slice(i, i + ID_CHUNK));
+    if (error) throw new Error(error.message);
+  }
+
+  return { shifts: byId.size, removed: gone.length, backfilled: backfill };
+}
+
+export async function getScheduleStatus(): Promise<SyncStatus> {
+  return { configured: isConnecteamConfigured(), lastSyncedAt: await lastSynced("scheduled_shifts"), count: await rowCount("scheduled_shifts", "shift_id") };
 }
