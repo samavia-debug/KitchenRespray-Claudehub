@@ -6,6 +6,7 @@ import { isConnecteamConfigured } from "@/lib/connecteam/client";
 import { getConnecteamStatus, syncConnecteamStaff } from "@/lib/connecteam/sync";
 import { getVehicleStatus, syncVehicleInspections } from "@/lib/connecteam/vehicles-sync";
 import { getPpeStatus, syncPpeRequests } from "@/lib/connecteam/ppe-sync";
+import { getTimeClockStatus, getTimeOffStatus, syncTimeClock, syncTimeOff } from "@/lib/connecteam/time-sync";
 import { notifySlack, notifyWhatsApp } from "@/lib/monitoring/notify";
 
 const CONCURRENCY = 5;
@@ -30,6 +31,9 @@ const MIN_SECURITY_BUDGET_MS = 10_000;
 const CONNECTEAM_STALE_HOURS = 20;
 const VEHICLES_STALE_HOURS = 3;
 const PPE_STALE_HOURS = 3;
+const TIME_STALE_HOURS = 3;
+// The very first time-clock sync reads over a year of history, so give it more room.
+const MIN_TIME_BUDGET_MS = 25_000;
 const MIN_CONNECTEAM_BUDGET_MS = 10_000;
 
 function isAuthorized(request: NextRequest): boolean {
@@ -227,6 +231,44 @@ async function runCron(request: NextRequest) {
     }
   }
 
+  // Time clock and time off: "who forgot to clock out" and "who's off today"
+  // are only useful when current, so these also refresh every few hours.
+  let timeClockSync: { synced?: number; error?: string; skipped?: string } = { skipped: "not connected" };
+  if (isConnecteamConfigured()) {
+    try {
+      const status = await getTimeClockStatus();
+      const ageHours = status.lastSyncedAt ? (Date.now() - new Date(status.lastSyncedAt).getTime()) / 3_600_000 : Infinity;
+      if (ageHours < TIME_STALE_HOURS) {
+        timeClockSync = { skipped: "fresh" };
+      } else if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_TIME_BUDGET_MS) {
+        timeClockSync = { skipped: "out of time budget" };
+      } else {
+        const result = await syncTimeClock();
+        timeClockSync = { synced: result.shifts };
+      }
+    } catch (err: any) {
+      timeClockSync = { error: err.message };
+    }
+  }
+
+  let timeOffSync: { synced?: number; error?: string; skipped?: string } = { skipped: "not connected" };
+  if (isConnecteamConfigured()) {
+    try {
+      const status = await getTimeOffStatus();
+      const ageHours = status.lastSyncedAt ? (Date.now() - new Date(status.lastSyncedAt).getTime()) / 3_600_000 : Infinity;
+      if (ageHours < TIME_STALE_HOURS) {
+        timeOffSync = { skipped: "fresh" };
+      } else if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_TIME_BUDGET_MS) {
+        timeOffSync = { skipped: "out of time budget" };
+      } else {
+        const result = await syncTimeOff();
+        timeOffSync = { synced: result.requests };
+      }
+    } catch (err: any) {
+      timeOffSync = { error: err.message };
+    }
+  }
+
   return NextResponse.json({
     checkedCount: results.length,
     skippedCount: (websites?.length || 0) - due.length,
@@ -238,6 +280,8 @@ async function runCron(request: NextRequest) {
     connecteamSync,
     vehiclesSync,
     ppeSync,
+    timeClockSync,
+    timeOffSync,
   });
 }
 

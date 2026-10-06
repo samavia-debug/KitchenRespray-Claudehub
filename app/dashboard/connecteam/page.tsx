@@ -6,8 +6,10 @@ import { createClient } from "@/lib/supabase/client";
 import StaffTab from "../knowledge-base/staff-tab";
 import VehiclesTab from "../knowledge-base/vehicles-tab";
 import PpeTab from "../knowledge-base/ppe-tab";
+import HoursTab from "../knowledge-base/hours-tab";
+import TimeOffTab from "../knowledge-base/time-off-tab";
 
-const SECTIONS = ["Staff", "Vehicles", "Tools & PPE"] as const;
+const SECTIONS = ["Staff", "Vehicles", "Tools & PPE", "Hours", "Time off"] as const;
 
 export default function ConnecteamPage() {
   const supabase = createClient();
@@ -44,8 +46,8 @@ export default function ConnecteamPage() {
       <div className="page-header">
         <h1>👥 Connecteam</h1>
         <p>
-          Your Connecteam staff list, weekly vehicle inspections and tools &amp; PPE requests, synced into Eleven so you can search
-          them here or ask Eleven about them. Pay, birthday and home address are never copied across.
+          Your Connecteam staff list, vehicle inspections, tools &amp; PPE requests, hours and time off, synced into Eleven so you
+          can search them here or ask Eleven about them. Pay, birthday and home address are never copied across.
         </p>
       </div>
 
@@ -61,6 +63,8 @@ export default function ConnecteamPage() {
           {section === "Staff" && <StaffTab />}
           {section === "Vehicles" && <VehiclesTab />}
           {section === "Tools & PPE" && <PpeTab />}
+          {section === "Hours" && <HoursTab />}
+          {section === "Time off" && <TimeOffTab />}
         </>
       ) : (
         <p style={{ color: "var(--muted)" }}>Loading...</p>

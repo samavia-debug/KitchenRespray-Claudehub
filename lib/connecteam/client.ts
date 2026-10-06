@@ -121,3 +121,75 @@ export async function fetchFormSubmissions(formId: number): Promise<FormSubmissi
 
   return all;
 }
+
+export type ShiftSide = { timestamp?: number | null; timezone?: string; source?: { type?: string } };
+
+export type TimeClockShift = {
+  id: string;
+  start: ShiftSide;
+  end?: ShiftSide | null;
+  jobId?: string;
+  schedulerShiftId?: string;
+  isAutoClockOut?: boolean;
+};
+
+export type TimeActivityUser = { userId: number; shifts: TimeClockShift[] };
+export type ConnecteamTimeClock = { id: number; name: string; isArchived?: boolean };
+export type ConnecteamJob = { jobId: string; title: string; isDeleted?: boolean };
+export type TimeOffPolicyType = { id: string; name: string };
+
+export type TimeOffRequest = {
+  id: string;
+  userId: number;
+  policyTypeId: string;
+  isAllDay: boolean;
+  duration?: { units: string; amount: number };
+  startDate: string;
+  endDate: string;
+  startTime?: string;
+  endTime?: string;
+  status: string;
+};
+
+export async function fetchTimeClocks(): Promise<ConnecteamTimeClock[]> {
+  const body = await connecteamGet<{ data?: { timeClocks?: ConnecteamTimeClock[] } }>("/time-clock/v1/time-clocks");
+  return body.data?.timeClocks ?? [];
+}
+
+/** Clock-ins between two YYYY-MM-DD dates. The API rejects windows much over 90 days. */
+export async function fetchTimeActivities(clockId: number, startDate: string, endDate: string): Promise<TimeActivityUser[]> {
+  const body = await connecteamGet<{ data?: { timeActivitiesByUsers?: TimeActivityUser[] } }>(
+    `/time-clock/v1/time-clocks/${clockId}/time-activities?startDate=${startDate}&endDate=${endDate}`
+  );
+  return body.data?.timeActivitiesByUsers ?? [];
+}
+
+export async function fetchJobs(): Promise<ConnecteamJob[]> {
+  const body = await connecteamGet<{ data?: { jobs?: ConnecteamJob[] } }>("/jobs/v1/jobs?limit=500");
+  return body.data?.jobs ?? [];
+}
+
+export async function fetchTimeOffPolicyTypes(): Promise<TimeOffPolicyType[]> {
+  const body = await connecteamGet<{ data?: { policyTypes?: TimeOffPolicyType[] } }>("/time-off/v1/policy-types");
+  return body.data?.policyTypes ?? [];
+}
+
+/** Time off between two YYYY-MM-DD dates (365 days at most), 100 per page. */
+export async function fetchTimeOffRequests(startDate: string, endDate: string): Promise<TimeOffRequest[]> {
+  const pageSize = 100;
+  const all: TimeOffRequest[] = [];
+  let offset = 0;
+
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const body = await connecteamGet<{ data?: { timeOffRequests?: TimeOffRequest[]; requests?: TimeOffRequest[] } }>(
+      `/time-off/v1/requests?startDate=${startDate}&endDate=${endDate}&limit=${pageSize}&offset=${offset}`
+    );
+    const data = body.data as Record<string, unknown> | undefined;
+    const batch = ((data && Object.values(data).find(Array.isArray)) as TimeOffRequest[] | undefined) ?? [];
+    all.push(...batch);
+    if (batch.length < pageSize) break;
+    offset += batch.length;
+  }
+
+  return all;
+}
