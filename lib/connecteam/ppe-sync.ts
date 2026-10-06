@@ -1,7 +1,8 @@
 import { createServiceClient } from "@/lib/supabase/service";
+import { fetchAllRows } from "@/lib/supabase/paginate";
 import { fetchConnecteamForm, fetchFormSubmissions, isConnecteamConfigured } from "./client";
 import { parsePpeRequest, PPE_FORM_ID } from "./ppe";
-import { formatPpeContext, summarisePpe, type PpeOverview } from "./ppe-summary";
+import { formatPpeContext, summarisePpe, type PpeOverview, type PpeSummaryRow } from "./ppe-summary";
 import { loadStaff } from "./vehicles-sync";
 
 const UPSERT_CHUNK = 200;
@@ -41,14 +42,14 @@ export async function getPpeStatus(): Promise<PpeStatus> {
 /** The one place the figures are computed, shared by the dashboard view and Eleven. */
 export async function getPpeOverview(): Promise<{ overview: PpeOverview; lastSyncedAt: string | null }> {
   const supabase = createServiceClient();
-  const { data, error } = await supabase
-    .from("ppe_requests")
-    .select("submission_id, submitted_at, submitter_user_id, items, quantity, spray_suit_sizes, other_text, status, status_updated_at, manager_note, synced_at")
-    .order("submitted_at", { ascending: false })
-    .limit(5000);
-  if (error) throw new Error(error.message);
-
-  const rows = data || [];
+  const rows = await fetchAllRows<PpeSummaryRow & { synced_at: string }>((from, to) =>
+    supabase
+      .from("ppe_requests")
+      .select("submission_id, submitted_at, submitter_user_id, items, quantity, spray_suit_sizes, other_text, status, status_updated_at, manager_note, synced_at")
+      .order("submitted_at", { ascending: false })
+      .order("submission_id")
+      .range(from, to)
+  );
   const lastSyncedAt = rows.map((r) => r.synced_at as string).sort().slice(-1)[0] ?? null;
   return { overview: summarisePpe(rows, await loadStaff()), lastSyncedAt };
 }

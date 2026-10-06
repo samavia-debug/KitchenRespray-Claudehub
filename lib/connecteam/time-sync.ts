@@ -1,4 +1,5 @@
 import { createServiceClient } from "@/lib/supabase/service";
+import { fetchAllRows } from "@/lib/supabase/paginate";
 import {
   fetchJobs,
   fetchTimeActivities,
@@ -9,8 +10,8 @@ import {
 } from "./client";
 import { CONNECTEAM_SOURCE, parseStaffContent } from "./mapping";
 import { dateWindows, parseShifts, type ShiftRow } from "./time-clock";
-import { formatClockContext, summariseClock, type ClockOverview, type StaffDetail } from "./time-clock-summary";
-import { parseTimeOffRequest } from "./time-off";
+import { formatClockContext, summariseClock, type ClockOverview, type ClockShiftInput, type StaffDetail } from "./time-clock-summary";
+import { parseTimeOffRequest, type TimeOffRow } from "./time-off";
 import { formatTimeOffContext, summariseTimeOff, type TimeOffOverview } from "./time-off-summary";
 
 const DAY = 86_400_000;
@@ -156,29 +157,31 @@ export async function loadStaffDetails(): Promise<StaffDetail[]> {
 export async function getTimeClockOverview(): Promise<{ overview: ClockOverview; lastSyncedAt: string | null }> {
   const supabase = createServiceClient();
   const since = new Date(Date.now() - 100 * DAY).toISOString();
-  const { data, error } = await supabase
-    .from("time_clock_shifts")
-    .select("shift_id, user_id, started_at, ended_at, job_id, start_source, synced_at")
-    .gte("started_at", since)
-    .order("started_at", { ascending: false })
-    .limit(20000);
-  if (error) throw new Error(error.message);
+  const rows = await fetchAllRows<ClockShiftInput & { synced_at: string }>((from, to) =>
+    supabase
+      .from("time_clock_shifts")
+      .select("shift_id, user_id, started_at, ended_at, job_id, start_source, synced_at")
+      .gte("started_at", since)
+      .order("started_at", { ascending: false })
+      .order("shift_id")
+      .range(from, to)
+  );
 
   const { data: jobs } = await supabase.from("connecteam_jobs").select("job_id, title");
-  const rows = data || [];
   const lastSyncedAt = rows.map((r) => r.synced_at as string).sort().slice(-1)[0] ?? null;
   return { overview: summariseClock(rows, jobs || [], await loadStaffDetails()), lastSyncedAt };
 }
 
 export async function getTimeOffOverview(): Promise<{ overview: TimeOffOverview; lastSyncedAt: string | null }> {
-  const { data, error } = await createServiceClient()
-    .from("time_off_requests")
-    .select("request_id, user_id, policy_type_id, leave_type, status, is_all_day, duration_days, start_date, end_date, start_time, end_time, synced_at")
-    .order("start_date", { ascending: true })
-    .limit(20000);
-  if (error) throw new Error(error.message);
-
-  const rows = data || [];
+  const supabase = createServiceClient();
+  const rows = await fetchAllRows<TimeOffRow & { synced_at: string }>((from, to) =>
+    supabase
+      .from("time_off_requests")
+      .select("request_id, user_id, policy_type_id, leave_type, status, is_all_day, duration_days, start_date, end_date, start_time, end_time, synced_at")
+      .order("start_date", { ascending: true })
+      .order("request_id")
+      .range(from, to)
+  );
   const lastSyncedAt = rows.map((r) => r.synced_at as string).sort().slice(-1)[0] ?? null;
   return { overview: summariseTimeOff(rows, await loadStaffDetails()), lastSyncedAt };
 }

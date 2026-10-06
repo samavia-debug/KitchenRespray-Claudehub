@@ -1,8 +1,9 @@
 import { createServiceClient } from "@/lib/supabase/service";
+import { fetchAllRows } from "@/lib/supabase/paginate";
 import { fetchConnecteamForm, fetchFormSubmissions, isConnecteamConfigured } from "./client";
 import { CONNECTEAM_SOURCE } from "./mapping";
 import { parseInspections, VEHICLE_FORM_ID } from "./vehicles";
-import { formatVehicleContext, summariseVehicles, type StaffRef, type VehicleOverview } from "./vehicles-summary";
+import { formatVehicleContext, summariseVehicles, type StaffRef, type SummaryRow, type VehicleOverview } from "./vehicles-summary";
 
 const UPSERT_CHUNK = 200;
 
@@ -61,16 +62,16 @@ export async function loadStaff(): Promise<StaffRef[]> {
 /** The one place the figures are computed, shared by the dashboard view and Eleven. */
 export async function getVehicleOverview(): Promise<{ overview: VehicleOverview; lastSyncedAt: string | null }> {
   const supabase = createServiceClient();
-  const { data, error } = await supabase
-    .from("vehicle_inspections")
-    .select(
-      "vehicle_key, vehicle_reg, make_model, submitted_at, submitter_user_id, driver_name, odometer_text, odometer_km, trip_type, defects, safety_equipment_ok, condition_ok, synced_at"
-    )
-    .order("submitted_at", { ascending: false })
-    .limit(5000);
-  if (error) throw new Error(error.message);
-
-  const rows = data || [];
+  const rows = await fetchAllRows<SummaryRow & { synced_at: string }>((from, to) =>
+    supabase
+      .from("vehicle_inspections")
+      .select(
+        "vehicle_key, vehicle_reg, make_model, submitted_at, submitter_user_id, driver_name, odometer_text, odometer_km, trip_type, defects, safety_equipment_ok, condition_ok, synced_at"
+      )
+      .order("submitted_at", { ascending: false })
+      .order("submission_id")
+      .range(from, to)
+  );
   const staff = await loadStaff();
   const lastSyncedAt = rows.map((r) => r.synced_at as string).sort().slice(-1)[0] ?? null;
   return { overview: summariseVehicles(rows, staff), lastSyncedAt };
