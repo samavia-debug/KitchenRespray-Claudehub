@@ -57,6 +57,14 @@ textarea {
   width: 100%;
 }
 
+/* The full-width text-box styling above would stretch checkboxes and radios. */
+input[type="checkbox"],
+input[type="radio"] {
+  width: auto;
+  padding: 0;
+  flex-shrink: 0;
+}
+
 button {
   font-family: inherit;
   cursor: pointer;

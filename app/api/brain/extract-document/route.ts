@@ -3,6 +3,10 @@ import { requireRole } from "@/lib/auth/session";
 import { createServiceClient } from "@/lib/supabase/service";
 import { extractDocumentText, extractFileNameFromPath } from "@/lib/knowledge/extract";
 
+// Reading a large PDF can take longer than the host's default time limit,
+// and a bulk upload sends many of these in a row.
+export const maxDuration = 60;
+
 const ENTRY_EXCERPT_CHARS = 4000; // bounded so one document doesn't dominate every Ask-the-Brain prompt
 
 /**

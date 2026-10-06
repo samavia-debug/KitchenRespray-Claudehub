@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { WebsiteOption } from "./entry-types";
-
-const BUCKET = "business-brain-documents";
+import { BUCKET } from "./storage";
+import BulkUpload from "./bulk-upload";
 
 const CATEGORY_OPTIONS = ["HR", "Staff", "Van", "Contracts", "Licences", "General"];
 
@@ -284,6 +284,15 @@ export default function DocumentsTab() {
           {uploading ? "Uploading..." : "Upload document"}
         </button>
       </div>
+
+      <BulkUpload
+        websites={websites}
+        fixedCategories={CATEGORY_OPTIONS}
+        customCategories={existingCustomCategories}
+        existingTitles={documents.map((d) => d.title)}
+        normalizeCategory={normalizeCategory}
+        onDone={load}
+      />
 
       {documents.length === 0 ? (
         <div className="card">
