@@ -117,6 +117,41 @@ describe("summarisePpe", () => {
     expect(typo.topItems[0].units).toBe(0);
   });
 
+  it("breaks each item down by who asked for it", () => {
+    const people: StaffRef[] = [
+      { userId: 1, name: "Anna Painter", former: false },
+      { userId: 2, name: "Ben Fitter", former: false },
+    ];
+    const r = summarisePpe(
+      [
+        req("a1", 5, { items: ["Gloves"], quantity: 10 }),
+        req("a2", 20, { items: ["Gloves"], quantity: 20, status: null, status_updated_at: null }),
+        req("b1", 3, { submitter_user_id: 2, items: ["Gloves", "Tape"], quantity: 99 }),
+        req("u1", 1, { submitter_user_id: null, items: ["Tape"], quantity: 4 }),
+        req("g1", 7, { submitter_user_id: 77, items: ["Tape"], quantity: 2 }),
+        req("old", 120, { items: ["Gloves"] }), // outside the 90-day window
+      ],
+      people,
+      NOW
+    );
+    const gloves = r.topItems.find((i) => i.item === "Gloves")!;
+    expect(gloves.requests).toBe(3);
+    expect(gloves.openRequests).toBe(1);
+    expect(gloves.orderers.map((p) => p.name)).toEqual(["Anna Painter", "Ben Fitter"]);
+    expect(gloves.orderers[0]).toMatchObject({ requests: 2, units: 30, open: 1 });
+    expect(gloves.orderers[1]).toMatchObject({ requests: 1, units: 0, open: 0 }); // multi-item request adds no units
+    expect(gloves.lastRequestedAt).toBe(ago(3));
+
+    const tape = r.topItems.find((i) => i.item === "Tape")!;
+    expect(tape.orderers.map((p) => p.name).sort()).toEqual(["Ben Fitter", "Connecteam user 77", "Unknown"]);
+  });
+
+  it("lists who asked for each item in the text for Eleven", () => {
+    const text = formatPpeContext(o, ago(0));
+    expect(text).toContain("Who asked for each item in the last 90 days");
+    expect(text).toMatch(/- Gloves \(1 person\): Anna Painter 3/);
+  });
+
   it("works out the typical time to Done", () => {
     expect(o.medianHoursToDone).toBe(2);
   });

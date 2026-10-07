@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { Fragment, useCallback, useEffect, useState } from "react";
 import { PPE_RULES, type OpenRequest, type PpeOverview } from "@/lib/connecteam/ppe-summary";
 import { formatDate } from "@/lib/connecteam/vehicles-summary";
 
@@ -58,6 +58,7 @@ export default function PpeTab() {
   const [error, setError] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [openItem, setOpenItem] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -184,22 +185,64 @@ export default function PpeTab() {
 
           <div className="card" style={{ marginBottom: "1.25rem" }}>
             <h2 style={{ marginTop: 0 }}>Most requested — last {PPE_RULES.popularWindowDays} days</h2>
+            <p style={{ color: "var(--muted)", margin: "0 0 0.75rem", fontSize: "0.85rem" }}>Click an item to see who ordered it.</p>
             <div className="table-wrap">
               <table className="data-table">
                 <thead>
                   <tr>
                     <th>Item</th>
                     <th>Requests</th>
+                    <th>People</th>
                     <th>Units (single-item requests only)</th>
+                    <th>Still open</th>
+                    <th>Last asked</th>
                   </tr>
                 </thead>
                 <tbody>
                   {o.topItems.map((i) => (
-                    <tr key={i.item}>
-                      <td>{i.item}</td>
-                      <td>{i.requests}</td>
-                      <td>{i.units || "—"}</td>
-                    </tr>
+                    <Fragment key={i.item}>
+                      <tr onClick={() => setOpenItem(openItem === i.item ? null : i.item)} style={{ cursor: "pointer" }}>
+                        <td>
+                          <span style={{ color: "var(--muted)", marginRight: "0.35rem" }}>{openItem === i.item ? "▾" : "▸"}</span>
+                          {i.item}
+                        </td>
+                        <td>{i.requests}</td>
+                        <td>{i.orderers.length}</td>
+                        <td>{i.units || "—"}</td>
+                        <td style={i.openRequests > 0 ? { color: "#b98900" } : undefined}>{i.openRequests || "—"}</td>
+                        <td>{formatDate(i.lastRequestedAt)}</td>
+                      </tr>
+                      {openItem === i.item && (
+                        <tr>
+                          <td colSpan={6} style={{ background: "var(--accent-soft)" }}>
+                            <div className="table-wrap">
+                              <table className="data-table">
+                                <thead>
+                                  <tr>
+                                    <th>Who</th>
+                                    <th>Requests</th>
+                                    <th>Units</th>
+                                    <th>Still open</th>
+                                    <th>Last asked</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {i.orderers.map((p) => (
+                                    <tr key={p.name}>
+                                      <td>{p.name}</td>
+                                      <td>{p.requests}</td>
+                                      <td>{p.units || "—"}</td>
+                                      <td style={p.open > 0 ? { color: "#b98900" } : undefined}>{p.open || "—"}</td>
+                                      <td>{formatDate(p.lastRequestedAt)}</td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>

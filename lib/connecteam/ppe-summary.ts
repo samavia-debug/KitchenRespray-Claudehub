@@ -28,12 +28,17 @@ export type OpenRequest = {
   note: string | null;
 };
 
+/** Who asked for an item over the popularity window. Units count single-item requests only, like the item totals. */
+export type Orderer = { name: string; requests: number; units: number; lastRequestedAt: string; open: number };
+
+export type ItemStat = { item: string; requests: number; units: number; openRequests: number; lastRequestedAt: string; orderers: Orderer[] };
+
 export type PpeOverview = {
   generatedAt: string;
   totals: { requests7: number; requests30: number; requests90: number; done30: number };
   openRecent: OpenRequest[];
   openStale: OpenRequest[];
-  topItems: { item: string; requests: number; units: number }[];
+  topItems: ItemStat[];
   sizes: { size: string; requests: number }[];
   medianHoursToDone: number | null;
 };
@@ -64,17 +69,32 @@ export function summarisePpe(rows: PpeSummaryRow[], staff: StaffRef[], nowMs: nu
   const open = sorted.filter(isOpen).map(toOpen);
   const last90 = sorted.filter((r) => t(r) >= since(PPE_RULES.popularWindowDays));
 
-  const itemStats = new Map<string, { requests: number; units: number }>();
+  const requesterName = (r: PpeSummaryRow) =>
+    r.submitter_user_id !== null ? nameById.get(r.submitter_user_id) ?? `Connecteam user ${r.submitter_user_id}` : "Unknown";
+  // One quantity covers the whole request, so units are only meaningful
+  // when the request is for a single item.
+  const unitsOf = (r: PpeSummaryRow) =>
+    r.items.length === 1 && r.quantity !== null && r.quantity > 0 && r.quantity <= PPE_RULES.maxPlausibleQuantity ? r.quantity : 0;
+
+  type Acc = { requests: number; units: number; open: number; lastMs: number };
+  const bump = (a: Acc, r: PpeSummaryRow) => {
+    a.requests += 1;
+    a.units += unitsOf(r);
+    if (isOpen(r)) a.open += 1;
+    a.lastMs = Math.max(a.lastMs, t(r));
+  };
+  const fresh = (): Acc => ({ requests: 0, units: 0, open: 0, lastMs: 0 });
+
+  const itemStats = new Map<string, { total: Acc; by: Map<string, Acc> }>();
   for (const r of last90) {
+    const who = requesterName(r);
     for (const item of r.items) {
-      const s = itemStats.get(item) ?? { requests: 0, units: 0 };
-      s.requests += 1;
-      // One quantity covers the whole request, so units are only meaningful
-      // when the request is for a single item.
-      if (r.items.length === 1 && r.quantity !== null && r.quantity > 0 && r.quantity <= PPE_RULES.maxPlausibleQuantity) {
-        s.units += r.quantity;
-      }
-      itemStats.set(item, s);
+      const entry = itemStats.get(item) ?? { total: fresh(), by: new Map<string, Acc>() };
+      bump(entry.total, r);
+      const person = entry.by.get(who) ?? fresh();
+      bump(person, r);
+      entry.by.set(who, person);
+      itemStats.set(item, entry);
     }
   }
 
@@ -98,8 +118,17 @@ export function summarisePpe(rows: PpeSummaryRow[], staff: StaffRef[], nowMs: nu
     openRecent: open.filter((r) => r.daysOld <= PPE_RULES.staleAfterDays),
     openStale: open.filter((r) => r.daysOld > PPE_RULES.staleAfterDays).sort((a, b) => b.daysOld - a.daysOld),
     topItems: Array.from(itemStats.entries())
-      .map(([item, s]) => ({ item, ...s }))
-      .sort((a, b) => b.requests - a.requests),
+      .map(([item, e]) => ({
+        item,
+        requests: e.total.requests,
+        units: e.total.units,
+        openRequests: e.total.open,
+        lastRequestedAt: new Date(e.total.lastMs).toISOString(),
+        orderers: Array.from(e.by.entries())
+          .map(([name, a]) => ({ name, requests: a.requests, units: a.units, lastRequestedAt: new Date(a.lastMs).toISOString(), open: a.open }))
+          .sort((a, b) => b.requests - a.requests || b.lastRequestedAt.localeCompare(a.lastRequestedAt) || a.name.localeCompare(b.name)),
+      }))
+      .sort((a, b) => b.requests - a.requests || a.item.localeCompare(b.item)),
     sizes: Array.from(sizeStats.entries())
       .map(([size, requests]) => ({ size, requests }))
       .sort((a, b) => b.requests - a.requests),
@@ -141,6 +170,15 @@ export function formatPpeContext(o: PpeOverview, lastSyncedAt: string | null): s
     `Most requested items in the last ${PPE_RULES.popularWindowDays} days (number of requests; units from single-item requests): ` +
       (o.topItems.slice(0, 20).map((i) => `${i.item} ${i.requests} (${i.units} units)`).join("; ") || "none")
   );
+  lines.push(`Who asked for each item in the last ${PPE_RULES.popularWindowDays} days (requests, units from single-item requests, still open, most recent request; most frequent first):`);
+  for (const i of o.topItems.slice(0, 15)) {
+    const people = i.orderers
+      .slice(0, 8)
+      .map((p) => `${p.name} ${p.requests}${p.units ? ` (${p.units} units)` : ""}${p.open ? `, ${p.open} open` : ""}, last ${formatDate(p.lastRequestedAt)}`)
+      .join("; ");
+    const more = i.orderers.length > 8 ? `; and ${i.orderers.length - 8} others` : "";
+    lines.push(`- ${i.item} (${i.orderers.length} ${i.orderers.length === 1 ? "person" : "people"}): ${people}${more}`);
+  }
   lines.push(
     `Spray suit sizes requested in the last ${PPE_RULES.popularWindowDays} days: ${o.sizes.map((s) => `${s.size} ${s.requests}`).join(", ") || "none"}.`
   );
