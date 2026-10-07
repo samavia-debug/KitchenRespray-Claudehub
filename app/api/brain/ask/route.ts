@@ -6,6 +6,7 @@ import { getVehicleContextForEleven } from "@/lib/connecteam/vehicles-sync";
 import { getPpeContextForEleven } from "@/lib/connecteam/ppe-sync";
 import { getTimeClockContextForEleven, getTimeOffContextForEleven } from "@/lib/connecteam/time-sync";
 import { getScorecardContextForEleven, getTodayContextForEleven } from "@/lib/connecteam/operations-sync";
+import { getComplianceContextForEleven } from "@/lib/compliance/service";
 
 /**
  * "Ask Eleven" — answers a natural-language question using
@@ -138,13 +139,14 @@ Sites analysed by Claude today: ${
     ? performanceLines.join("\n")
     : "No sites have connected Analytics/Search Console data yet.";
 
-  const [vehicleBlock, ppeBlock, clockBlock, timeOffBlock, todayBlock, scorecardBlock] = await Promise.all([
+  const [vehicleBlock, ppeBlock, clockBlock, timeOffBlock, todayBlock, scorecardBlock, complianceBlock] = await Promise.all([
     getVehicleContextForEleven(),
     getPpeContextForEleven(),
     getTimeClockContextForEleven(),
     getTimeOffContextForEleven(),
     getTodayContextForEleven(),
     getScorecardContextForEleven(),
+    getComplianceContextForEleven(),
   ]);
 
   const systemPrompt = `You are "Eleven", a company's internal dashboard assistant — you answer staff questions using ONLY the company's own recorded knowledge base, website/brand list, today's real dashboard activity, and real site performance data given below. You are not a general assistant; you have no other knowledge of this specific company beyond what's provided here.
@@ -162,6 +164,7 @@ Critical rules:
 - For questions about TODAY — who is working now, who is late, who hasn't clocked in, who forgot to clock out, what is happening today, how the day is going — answer from the OPERATIONS TODAY section, quoting its lists and the definition used (e.g. what counts as late). Say how fresh it is. Never claim anyone is "on a job site": the data has no location. If the checklist figure looks low, explain that few checklist items are ever ticked, so it understates the work done.
 - For questions comparing branches or teams, or asking which team is doing best or worst at something (late arrivals, vehicle checks, forgotten clock-outs, safety equipment, PPE speed, hours) — answer from the TEAM SCORECARD section, quoting its figures for the latest full week and the previous week, and say how each figure is defined. Don't rank on a figure with a tiny base (e.g. 1 of 1 drivers); say how small the group is.
 - For questions about holidays, sick leave, who is off today or soon, or how many days someone has taken — answer from the TIME OFF section, quoting its lists, and keep "Bank Holidays" separate from "Holidays".
+- For questions about licences, insurance, certificates, NCT, road tax, training or anything expiring or lapsed — answer from the COMPLIANCE REGISTER section, quoting its dates and "days left", and say it only covers what has been recorded and confirmed. "Possible gaps" are things with no confirmed record, not proof that something is missing, so word them as "nothing is recorded for…". Never tell anyone a licence or policy is valid or legal to rely on; say what the register shows and that the original document should be checked.
 - After your answer, list the sources you actually used as a "Sources:" section, citing each by its [id:...] tag and title exactly as given for knowledge entries. Activity/performance/website records don't have [id:...] tags — describe them in the answer itself but don't fabricate a source tag for them.
 - Keep the answer itself concise and directly responsive to the question.
 
@@ -182,6 +185,9 @@ ${todayBlock || "Not available — today's clock and rota data hasn't been synce
 
 TIME CLOCK (hours worked):
 ${clockBlock || "Not available — time clock data hasn't been synced yet."}
+
+COMPLIANCE REGISTER (licences, insurance, certificates):
+${complianceBlock || "Not available — nothing has been added to the compliance register yet."}
 
 TIME OFF:
 ${timeOffBlock || "Not available — time off data hasn't been synced yet."}

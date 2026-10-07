@@ -8,6 +8,7 @@ import { getVehicleStatus, syncVehicleInspections } from "@/lib/connecteam/vehic
 import { getPpeStatus, syncPpeRequests } from "@/lib/connecteam/ppe-sync";
 import { getScheduleStatus, getTimeClockStatus, getTimeOffStatus, syncSchedule, syncTimeClock, syncTimeOff } from "@/lib/connecteam/time-sync";
 import { notifySlack, notifyWhatsApp } from "@/lib/monitoring/notify";
+import { sendComplianceAlerts } from "@/lib/compliance/service";
 
 const CONCURRENCY = 5;
 
@@ -291,6 +292,19 @@ async function runCron(request: NextRequest) {
     }
   }
 
+  // Expiry warnings go out in working hours only, so nobody is woken for a licence that runs out next month.
+  let complianceAlerts: { sent?: number; error?: string; skipped?: string } = { skipped: "outside working hours" };
+  const dublinHour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Dublin", hour: "2-digit", hourCycle: "h23" }).format(Date.now()));
+  if (dublinHour >= 7 && dublinHour < 19) {
+    try {
+      const result = await sendComplianceAlerts();
+      complianceAlerts = result.skipped ? { skipped: result.skipped } : { sent: result.sent };
+    } catch (err: any) {
+      // The register table may not exist yet (migration not run); that is not a cron failure.
+      complianceAlerts = { error: err.message };
+    }
+  }
+
   return NextResponse.json({
     checkedCount: results.length,
     skippedCount: (websites?.length || 0) - due.length,
@@ -305,6 +319,7 @@ async function runCron(request: NextRequest) {
     timeClockSync,
     scheduleSync,
     timeOffSync,
+    complianceAlerts,
   });
 }
 

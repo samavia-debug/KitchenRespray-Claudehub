@@ -13,9 +13,10 @@ import VehiclesTab from "./vehicles-tab";
 import PpeTab from "./ppe-tab";
 import HoursTab from "./hours-tab";
 import TimeOffTab from "./time-off-tab";
+import ComplianceTab from "./compliance-tab";
 import HealthTab from "./health-tab";
 
-const TABS = ["Overview", "Ask Eleven", "All Knowledge", "Documents", "Staff", "Vehicles", "Tools & PPE", "Hours", "Time off", "Knowledge Health"] as const;
+const TABS = ["Overview", "Ask Eleven", "All Knowledge", "Documents", "Staff", "Vehicles", "Tools & PPE", "Hours", "Time off", "Compliance", "Knowledge Health"] as const;
 type Tab = (typeof TABS)[number];
 
 export default function KnowledgeBasePage() {
@@ -105,6 +106,7 @@ export default function KnowledgeBasePage() {
       {tab === "Tools & PPE" && <PpeTab />}
       {tab === "Hours" && <HoursTab />}
       {tab === "Time off" && <TimeOffTab />}
+      {tab === "Compliance" && <ComplianceTab />}
       {tab === "Knowledge Health" && <HealthTab />}
     </>
   );
