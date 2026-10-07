@@ -7,6 +7,7 @@ import { getPpeContextForEleven } from "@/lib/connecteam/ppe-sync";
 import { getTimeClockContextForEleven, getTimeOffContextForEleven } from "@/lib/connecteam/time-sync";
 import { getScorecardContextForEleven, getTodayContextForEleven } from "@/lib/connecteam/operations-sync";
 import { getComplianceContextForEleven } from "@/lib/compliance/service";
+import { getCapacityContextForEleven } from "@/lib/capacity/service";
 
 /**
  * "Ask Eleven" — answers a natural-language question using
@@ -139,7 +140,7 @@ Sites analysed by Claude today: ${
     ? performanceLines.join("\n")
     : "No sites have connected Analytics/Search Console data yet.";
 
-  const [vehicleBlock, ppeBlock, clockBlock, timeOffBlock, todayBlock, scorecardBlock, complianceBlock] = await Promise.all([
+  const [vehicleBlock, ppeBlock, clockBlock, timeOffBlock, todayBlock, scorecardBlock, complianceBlock, capacityBlock] = await Promise.all([
     getVehicleContextForEleven(),
     getPpeContextForEleven(),
     getTimeClockContextForEleven(),
@@ -147,6 +148,7 @@ Sites analysed by Claude today: ${
     getTodayContextForEleven(),
     getScorecardContextForEleven(),
     getComplianceContextForEleven(),
+    getCapacityContextForEleven(),
   ]);
 
   const systemPrompt = `You are "Eleven", a company's internal dashboard assistant — you answer staff questions using ONLY the company's own recorded knowledge base, website/brand list, today's real dashboard activity, and real site performance data given below. You are not a general assistant; you have no other knowledge of this specific company beyond what's provided here.
@@ -165,6 +167,7 @@ Critical rules:
 - For questions comparing branches or teams, or asking which team is doing best or worst at something (late arrivals, vehicle checks, forgotten clock-outs, safety equipment, PPE speed, hours) — answer from the TEAM SCORECARD section, quoting its figures for the latest full week and the previous week, and say how each figure is defined. Don't rank on a figure with a tiny base (e.g. 1 of 1 drivers); say how small the group is.
 - For questions about holidays, sick leave, who is off today or soon, or how many days someone has taken — answer from the TIME OFF section, quoting its lists, and keep "Bank Holidays" separate from "Holidays".
 - For questions about licences, insurance, certificates, NCT, road tax, training or anything expiring or lapsed — answer from the COMPLIANCE REGISTER section, quoting its dates and "days left", and say it only covers what has been recorded and confirmed. "Possible gaps" are things with no confirmed record, not proof that something is missing, so word them as "nothing is recorded for…". Never tell anyone a licence or policy is valid or legal to rely on; say what the register shows and that the original document should be checked.
+- For questions about whether the team has enough capacity, staffing against demand, whether the rota ahead looks short, or how website traffic compares with technician hours — answer from the DEMAND VS CAPACITY section, quoting its weekly figures and findings and saying which weeks it used. Weeks marked "unplanned" are rota weeks nobody has filled in yet, not understaffing; draft shifts are not yet published. Website visits are interest in the sites, not booked jobs, and the history is short, so say so and never claim traffic caused a change in hours (or the reverse). Do not give a precise "how many more people to hire" number from this data.
 - After your answer, list the sources you actually used as a "Sources:" section, citing each by its [id:...] tag and title exactly as given for knowledge entries. Activity/performance/website records don't have [id:...] tags — describe them in the answer itself but don't fabricate a source tag for them.
 - Keep the answer itself concise and directly responsive to the question.
 
@@ -185,6 +188,9 @@ ${todayBlock || "Not available — today's clock and rota data hasn't been synce
 
 TIME CLOCK (hours worked):
 ${clockBlock || "Not available — time clock data hasn't been synced yet."}
+
+DEMAND VS CAPACITY (website interest against technician hours, weekly):
+${capacityBlock || "Not available — clock, rota or website data has not been synced yet."}
 
 COMPLIANCE REGISTER (licences, insurance, certificates):
 ${complianceBlock || "Not available — nothing has been added to the compliance register yet."}

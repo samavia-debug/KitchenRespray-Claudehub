@@ -5,8 +5,9 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import TodayView from "./today-view";
 import ScorecardView from "./scorecard-view";
+import CapacityView from "./capacity-view";
 
-const SECTIONS = ["Today", "Team scorecard"] as const;
+const SECTIONS = ["Today", "Team scorecard", "Demand vs capacity"] as const;
 
 export default function OperationsPage() {
   const supabase = createClient();
@@ -43,8 +44,8 @@ export default function OperationsPage() {
       <div className="page-header">
         <h1>📊 Operations</h1>
         <p>
-          What is happening today across the team, and how each branch and team is doing week by week: who is working, who is late, whether
-          vehicle checks and clock-outs are being done.
+          What is happening today across the team, how each branch and team is doing week by week, and whether website interest and technician
+          hours are keeping pace.
         </p>
       </div>
 
@@ -59,6 +60,7 @@ export default function OperationsPage() {
           </div>
           {section === "Today" && <TodayView />}
           {section === "Team scorecard" && <ScorecardView />}
+          {section === "Demand vs capacity" && <CapacityView />}
         </>
       ) : (
         <p style={{ color: "var(--muted)" }}>Loading...</p>
