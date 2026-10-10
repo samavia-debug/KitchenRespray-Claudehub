@@ -27,6 +27,9 @@ import { getCapacityContextForEleven } from "@/lib/capacity/service";
  * bound; if the knowledge base outgrows what comfortably fits in context,
  * this is the point to add real keyword/semantic retrieval on top.
  */
+// Thinking plus a long answer can take a while; the default limit is too short.
+export const maxDuration = 60;
+
 export async function POST(request: Request) {
   const auth = await requireRole(["Admin"]);
   if ("error" in auth) return auth.error;
@@ -208,32 +211,52 @@ WEBSITES / BRANDS:
 ${websitesBlock}`;
 
   try {
-    const anthropicResponse = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY || "",
-        "anthropic-version": "2023-06-01",
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-5",
-        max_tokens: 1200,
-        system: systemPrompt,
-        messages: [{ role: "user", content: question.trim() }],
-      }),
-    });
+    // The model can "think" before it answers, and that thinking counts against
+    // max_tokens. On a data-heavy question ("analyse this person") a small budget
+    // is used up before any answer text appears, which used to surface as an
+    // empty response. So: a roomy budget first, and one larger retry if it still
+    // ran out before answering.
+    const ask = async (maxTokens: number) => {
+      const response = await fetch("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": process.env.ANTHROPIC_API_KEY || "",
+          "anthropic-version": "2023-06-01",
+        },
+        body: JSON.stringify({
+          model: "claude-sonnet-5",
+          max_tokens: maxTokens,
+          system: systemPrompt,
+          messages: [{ role: "user", content: question.trim() }],
+        }),
+      });
+      if (!response.ok) return { error: `Claude API error: ${await response.text()}` } as const;
+      const data = await response.json();
+      const text: string = (data.content || [])
+        .filter((c: any) => c.type === "text" && c.text)
+        .map((c: any) => c.text)
+        .join("\n")
+        .trim();
+      return { text, stopReason: (data.stop_reason as string | undefined) ?? "unknown" } as const;
+    };
 
-    if (!anthropicResponse.ok) {
-      const errText = await anthropicResponse.text();
-      return NextResponse.json({ error: `Claude API error: ${errText}` }, { status: 500 });
+    let result = await ask(4096);
+    if ("text" in result && !result.text && result.stopReason === "max_tokens") result = await ask(12000);
+
+    if ("error" in result) {
+      return NextResponse.json({ error: result.error }, { status: 500 });
     }
 
-    const anthropicData = await anthropicResponse.json();
-    const textBlock = anthropicData.content?.find((c: any) => c.type === "text");
-    const fullText: string = textBlock?.text || "";
-
+    const fullText = result.text;
     if (!fullText) {
-      return NextResponse.json({ error: "Claude returned an empty response" }, { status: 500 });
+      const why =
+        result.stopReason === "refusal"
+          ? "Claude declined to answer this one. Try asking about the data itself, for example “show this person's tool requests and days off”."
+          : result.stopReason === "max_tokens"
+          ? "Claude ran out of room before finishing. Try a narrower question."
+          : `Claude returned no answer (stop reason: ${result.stopReason}). Please try again.`;
+      return NextResponse.json({ error: why }, { status: 500 });
     }
 
     // Split the "Sources:" section back out so the UI can render clickable
