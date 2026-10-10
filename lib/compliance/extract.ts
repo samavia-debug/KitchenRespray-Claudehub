@@ -25,7 +25,7 @@ export const EXTRACT_RULES = {
 // Price lists and the like never carry an expiry that matters here.
 const SKIP_CATEGORY = /price|brochure|marketing/i;
 // Cheap test before spending a model call: a document with none of these has nothing to find.
-const RELEVANT = /expir|valid\s+(until|to|through)|renew|until|due\s+date|end\s+date|licen[cs]e|insur|certificat|policy\s+(no|number)|nct|roadworthy|road\s+tax|safe\s*pass|training/i;
+const RELEVANT = /expir|valid\s+(until|to|through)|renew|until|due\s+date|end\s+date|licen[cs]e|insur|certificat|policy\s+(no|number)|\bnct\b|roadworthy|road\s+tax|safe\s*pass|training/i;
 
 export function shouldScan(category: string | null | undefined, text: string | null | undefined): boolean {
   if (!text || text.trim().length < 40) return false;

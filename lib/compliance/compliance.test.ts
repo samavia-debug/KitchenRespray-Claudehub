@@ -202,6 +202,12 @@ describe("shouldScan", () => {
     expect(shouldScan("HR", "Welcome to the company. We make kitchens look great and customers love the finish we give them.")).toBe(false);
     expect(shouldScan("HR", null)).toBe(false);
   });
+
+  it("matches NCT as a word, not inside other words", () => {
+    const filler = "We make kitchens look great and customers love the finish we give them every single time. ";
+    expect(shouldScan("HR", `${filler}This function is handled at the junction of the two rooms.`)).toBe(false);
+    expect(shouldScan("Van", `${filler}The van's NCT is due in the spring.`)).toBe(true);
+  });
 });
 
 describe("parseExtraction", () => {
