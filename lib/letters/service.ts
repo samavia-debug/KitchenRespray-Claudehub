@@ -3,6 +3,7 @@ import { askClaude, CLAUDE_MODEL } from "@/lib/ai/anthropic";
 import { CONNECTEAM_SOURCE, parseStaffContent } from "@/lib/connecteam/mapping";
 import { dublinDateKey } from "@/lib/connecteam/time-clock-summary";
 import { FACT_LABEL, LETTER_TYPE_BY_KEY, type FactKey, type LetterStatus, type LetterTypeKey } from "./config";
+import { cleanStaffName } from "./names";
 import { applyAdded, factsForModel, factsFromStaff, formatLongDate, missingFacts, type LetterFacts } from "./facts";
 import { EMPTY_SETTINGS, type LetterSettings } from "./layout";
 import { buildSystemPrompt, buildUserMessage, parseDraft, type Draft, type LetterDetails, type Recipient } from "./prompt";
@@ -15,7 +16,7 @@ const FULL_COLUMNS = `${LIST_COLUMNS}, technician_user_id, recipient, facts, det
 
 // ---- Technicians (read from the existing Connecteam staff entries; nothing is copied) ----
 
-export type TechnicianListItem = { userId: number; name: string; jobTitle: string | null; role: string | null; department: string | null; former: boolean };
+export type TechnicianListItem = { userId: number; name: string; sourceName: string; jobTitle: string | null; role: string | null; department: string | null; former: boolean };
 
 async function staffEntries() {
   const { data, error } = await createServiceClient()
@@ -32,21 +33,25 @@ export async function listTechnicians(): Promise<TechnicianListItem[]> {
       const d = parseStaffContent((e.content as string) ?? "");
       return {
         userId: Number(e.external_id),
-        name: e.title as string,
+        name: cleanStaffName(e.title as string).name,
+        sourceName: e.title as string,
         jobTitle: d.jobTitle ?? null,
         role: d.role ?? null,
         department: d.department ?? null,
         former: e.status === "archived",
       };
     })
-    .sort((a, b) => Number(a.former) - Number(b.former) || a.name.localeCompare(b.name));
+    // Current staff first, then former, each by the cleaned name (not by the one-letter code).
+    .sort((a, b) => Number(a.former) - Number(b.former) || a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
 }
 
 export async function getTechnicianFacts(userId: number): Promise<LetterFacts | null> {
   const entry = (await staffEntries()).find((e) => Number(e.external_id) === userId);
   if (!entry) return null;
   const details = parseStaffContent((entry.content as string) ?? "");
-  return factsFromStaff(entry.title as string, { ...details, former: details.former || entry.status === "archived" });
+  const source = entry.title as string;
+  const facts = factsFromStaff(cleanStaffName(source).name, { ...details, former: details.former || entry.status === "archived" });
+  return facts.name === source ? facts : { ...facts, sourceName: source };
 }
 
 // ---- Settings ----
@@ -197,6 +202,8 @@ export async function deleteDraft(id: string, userId: string): Promise<SaveResul
 
 export type GenerateRequest = {
   technicianUserId: number;
+  /** The name to use on this letter, if the person corrected it. */
+  name?: string;
   letterType: LetterTypeKey;
   added: Partial<Record<FactKey, string>>;
   recipient: Recipient;
@@ -211,7 +218,8 @@ export async function generateLetter(req: GenerateRequest, userId: string): Prom
   if (!base) return { ok: false, error: "Technician not found", status: 404 };
 
   const config = LETTER_TYPE_BY_KEY[req.letterType];
-  const facts = applyAdded(base, req.added);
+  const typedName = req.name?.replace(/\s+/g, " ").trim().slice(0, 160);
+  const facts = { ...applyAdded(base, req.added), name: typedName || base.name };
   const settings = await getSettings();
 
   const reply = await askClaude(

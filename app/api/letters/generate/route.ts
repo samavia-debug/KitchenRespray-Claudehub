@@ -39,7 +39,8 @@ export async function POST(request: Request) {
     if (typeof rawAdded[key] === "string") added[key] = rawAdded[key];
   }
 
-  const result = await generateLetter({ technicianUserId: userId, letterType: type as LetterTypeKey, added, recipient, details, letterDate }, auth.session.user.id);
+  const name = typeof body.name === "string" ? body.name : undefined;
+  const result = await generateLetter({ technicianUserId: userId, name, letterType: type as LetterTypeKey, added, recipient, details, letterDate }, auth.session.user.id);
   if (!result.ok) return NextResponse.json({ error: result.error }, { status: result.status });
 
   // A letter to the technician themselves is addressed to them.

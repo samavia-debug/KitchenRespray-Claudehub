@@ -4,7 +4,10 @@ import { FACT_LABEL, LETTER_TYPE_BY_KEY, type FactKey, type LetterTypeKey } from
 export type FactSource = "connecteam" | "added";
 
 export type LetterFacts = {
+  /** The name to use on the letter (any one-letter code removed). */
   name: string;
+  /** The name exactly as Connecteam holds it, when it differs. */
+  sourceName?: string;
   former: boolean;
   values: Partial<Record<FactKey, string>>;
   /** Where each value came from, so the page can show what was added for this letter only. */

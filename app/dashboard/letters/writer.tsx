@@ -28,6 +28,7 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
   const [techId, setTechId] = useState<number | null>(null);
   const [facts, setFacts] = useState<LetterFacts | null>(null);
   const [added, setAdded] = useState<Partial<Record<FactKey, string>>>({});
+  const [nameOverride, setNameOverride] = useState<string | null>(null);
   const [type, setType] = useState<LetterTypeKey | "">("");
   const [recipient, setRecipient] = useState<Recipient>({});
   const [date, setDate] = useState(todayIso());
@@ -70,6 +71,7 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
     setTechId(null);
     setFacts(null);
     setAdded({});
+    setNameOverride(null);
     setType("");
     setRecipient({});
     setDate(todayIso());
@@ -121,6 +123,7 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
     setTechId(id);
     setFacts(null);
     setAdded({});
+    setNameOverride(null);
     setNotice(null);
     try {
       const res = await fetch(`/api/letters/technicians/${id}`);
@@ -147,12 +150,19 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
 
   // ---- Derived ----
 
-  const effective = useMemo(() => (facts ? applyAdded(facts, added) : null), [facts, added]);
+  const effective = useMemo(() => {
+    if (!facts) return null;
+    const withAdded = applyAdded(facts, added);
+    // The name on the letter can be corrected without touching the staff record.
+    return { ...withAdded, name: (nameOverride ?? withAdded.name).replace(/\s+/g, " ").trim() || withAdded.name };
+  }, [facts, added, nameOverride]);
   const missingNow = useMemo(() => (type && effective ? missingFacts(type, effective) : []), [type, effective]);
   const matches = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (techs || []).filter((t) => !q || `${t.name} ${t.jobTitle ?? ""} ${t.role ?? ""}`.toLowerCase().includes(q));
+    return (techs || []).filter((t) => !q || `${t.name} ${t.sourceName} ${t.jobTitle ?? ""} ${t.role ?? ""}`.toLowerCase().includes(q));
   }, [techs, search]);
+  const currentStaff = matches.filter((t) => !t.former);
+  const formerStaff = matches.filter((t) => t.former);
   const openItems = draft ? unresolvedPlaceholders(draft.body) : [];
 
   const set = <K extends keyof Draft>(key: K, value: string) => {
@@ -190,7 +200,7 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
       const res = await fetch("/api/letters/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ technician_user_id: techId, letter_type: type, added, recipient, details, letter_date: date }),
+        body: JSON.stringify({ technician_user_id: techId, name: effective?.name, letter_type: type, added, recipient, details, letter_date: date }),
       });
       const body = await res.json();
       if (!res.ok) {
@@ -347,13 +357,26 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
                 }}
                 aria-label="Technician"
               >
-                {matches.map((t) => (
-                  <option key={t.userId} value={t.userId}>
-                    {t.name}
-                    {t.jobTitle ? ` — ${t.jobTitle}` : ""}
-                    {t.former ? " (former)" : ""}
-                  </option>
-                ))}
+                {currentStaff.length > 0 && (
+                  <optgroup label={`Current staff (${currentStaff.length})`}>
+                    {currentStaff.map((t) => (
+                      <option key={t.userId} value={t.userId}>
+                        {t.name}
+                        {t.jobTitle ? ` — ${t.jobTitle}` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {formerStaff.length > 0 && (
+                  <optgroup label={`Former staff (${formerStaff.length})`}>
+                    {formerStaff.map((t) => (
+                      <option key={t.userId} value={t.userId}>
+                        {t.name}
+                        {t.jobTitle ? ` — ${t.jobTitle}` : ""}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
               {matches.length === 0 && <p style={{ color: "var(--muted)", fontSize: "0.85rem" }}>No one matches.</p>}
             </div>
@@ -361,10 +384,24 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
             {techId && !effective && <p style={{ color: "var(--muted)" }}>Loading details...</p>}
             {effective && (
               <div>
-                <p style={{ margin: "0 0 0.5rem", fontWeight: 600 }}>
-                  {effective.name}
-                  {effective.former && <span style={{ color: "#b98900", fontWeight: 400 }}> · former employee</span>}
-                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "120px 1fr", gap: "0.5rem", alignItems: "center", marginBottom: "0.4rem" }}>
+                  <label style={{ fontSize: "0.82rem", fontWeight: 600 }}>Name on the letter</label>
+                  <input
+                    value={effective.name}
+                    disabled={locked}
+                    onChange={(e) => {
+                      setNameOverride(e.target.value);
+                      setDirty(true);
+                    }}
+                  />
+                </div>
+                {facts?.sourceName && facts.sourceName !== effective.name && (
+                  <p style={{ margin: "0 0 0.6rem", fontSize: "0.72rem", color: "var(--muted)" }}>
+                    Connecteam has this person as &ldquo;{facts.sourceName}&rdquo;. The one-letter code at the front looks like a branch or team code, so it is left off the
+                    letter. Change the name above if that is wrong.
+                  </p>
+                )}
+                {effective.former && <p style={{ margin: "0 0 0.5rem", color: "#b98900", fontSize: "0.85rem" }}>Former employee</p>}
                 <p style={{ margin: "0 0 0.75rem", fontSize: "0.8rem", color: "var(--muted)" }}>
                   Please confirm these details. Anything you add or change here is used for this letter only; the staff record is not changed.
                 </p>

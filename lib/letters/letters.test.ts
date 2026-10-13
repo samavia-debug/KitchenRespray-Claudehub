@@ -7,6 +7,7 @@ import { bannerFor, EMPTY_SETTINGS, renderLetter, type LetterContent, type Lette
 import { buildDocx } from "./docx";
 import { buildZip, crc32 } from "./zip";
 import { cleanLetterInput, cleanSettings, nextStatus } from "./validate";
+import { cleanStaffName } from "./names";
 
 const staff = {
   jobTitle: "Spray Technician",
@@ -93,6 +94,22 @@ describe("technician facts", () => {
 
   it("says when someone is a former employee", () => {
     expect(factsForModel("general_business", factsFromStaff("A B", { ...staff, former: true }), false)["Employment status"]).toBe("former employee");
+  });
+});
+
+describe("staff names", () => {
+  it("drops the one-letter code Connecteam puts in front of most names", () => {
+    expect(cleanStaffName("K Derek Morkan")).toEqual({ name: "Derek Morkan", prefix: "K" });
+    expect(cleanStaffName("z Constantine Catan")).toEqual({ name: "Constantine Catan", prefix: "Z" });
+    expect(cleanStaffName("K Rodolfo De A.Formaggini Vieira")).toEqual({ name: "Rodolfo De A.Formaggini Vieira", prefix: "K" });
+    expect(cleanStaffName("  B   Anna   Murphy ")).toEqual({ name: "Anna Murphy", prefix: "B" });
+  });
+
+  it("leaves names without a code, and a real initial plus surname, alone", () => {
+    expect(cleanStaffName("Mo Zafar")).toEqual({ name: "Mo Zafar", prefix: null });
+    expect(cleanStaffName("J Smith")).toEqual({ name: "J Smith", prefix: null });
+    expect(cleanStaffName("Maria")).toEqual({ name: "Maria", prefix: null });
+    expect(cleanStaffName("")).toEqual({ name: "", prefix: null });
   });
 });
 

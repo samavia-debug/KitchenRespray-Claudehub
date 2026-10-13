@@ -36,7 +36,8 @@ export function cleanFacts(v: unknown, fallbackName: string): LetterFacts {
     values[key] = val;
     sources[key] = rawSources[key] === "added" ? "added" : "connecteam";
   }
-  return { name: oneLine(f.name, 160) || fallbackName, former: f.former === true, values, sources };
+  const sourceName = oneLine(f.sourceName, 160);
+  return { name: oneLine(f.name, 160) || fallbackName, ...(sourceName ? { sourceName } : {}), former: f.former === true, values, sources };
 }
 
 export type LetterInput = {
