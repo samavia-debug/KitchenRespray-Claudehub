@@ -401,3 +401,30 @@ button {
 .wide {
   max-width: 1400px !important;
 }
+
+/* Letter Writer: print only the letter. Everything marked no-print, and the app chrome, is hidden. */
+@media print {
+  @page {
+    size: A4;
+    margin: 18mm;
+  }
+  .no-print,
+  .sidebar,
+  .topbar {
+    display: none !important;
+  }
+  body,
+  .app-shell,
+  .main-area {
+    display: block !important;
+    background: #fff !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+  .letter-sheet {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    min-height: 0 !important;
+  }
+}
