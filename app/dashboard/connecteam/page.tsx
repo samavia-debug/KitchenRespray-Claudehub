@@ -8,8 +8,9 @@ import VehiclesTab from "../knowledge-base/vehicles-tab";
 import PpeTab from "../knowledge-base/ppe-tab";
 import HoursTab from "../knowledge-base/hours-tab";
 import TimeOffTab from "../knowledge-base/time-off-tab";
+import AppointmentsTab from "../knowledge-base/appointments-tab";
 
-const SECTIONS = ["Staff", "Vehicles", "Tools & PPE", "Hours", "Time off"] as const;
+const SECTIONS = ["Staff", "Vehicles", "Tools & PPE", "Hours", "Time off", "Appointments"] as const;
 
 export default function ConnecteamPage() {
   const supabase = createClient();
@@ -65,6 +66,7 @@ export default function ConnecteamPage() {
           {section === "Tools & PPE" && <PpeTab />}
           {section === "Hours" && <HoursTab />}
           {section === "Time off" && <TimeOffTab />}
+          {section === "Appointments" && <AppointmentsTab />}
         </>
       ) : (
         <p style={{ color: "var(--muted)" }}>Loading...</p>

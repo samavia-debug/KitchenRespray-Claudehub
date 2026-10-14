@@ -76,6 +76,30 @@ async function connecteamGet<T>(path: string): Promise<T> {
 }
 
 /**
+ * A change to Connecteam (create, update or delete). Only the Bookings copy uses
+ * this; everything else here only reads. The error carries Connecteam's own short
+ * reason for a rejected request (never the request headers, which hold the key).
+ */
+export async function connecteamSend<T>(method: "POST" | "PUT" | "DELETE", path: string, body?: unknown): Promise<T> {
+  const key = process.env.CONNECTEAM_API_KEY;
+  if (!key) throw new Error("CONNECTEAM_API_KEY is not set");
+
+  const res = await fetch(`${BASE_URL}${path}`, {
+    method,
+    headers: { "X-API-KEY": key, Accept: "application/json", "Content-Type": "application/json" },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const detail = res.status >= 400 && res.status < 500 ? (await res.text().catch(() => "")).replace(/\s+/g, " ").slice(0, 200) : "";
+    throw new Error(`Connecteam API returned HTTP ${res.status}${res.status === 403 ? " (key rejected, expired or read-only)" : ""}${detail ? `: ${detail}` : ""}`);
+  }
+  // A delete may return no body.
+  const text = await res.text();
+  return (text ? JSON.parse(text) : {}) as T;
+}
+
+/**
  * Every Connecteam user, current and archived. The API's userStatus filter
  * accepts "active", "archived" or "all" (its own docs say "inactive", which
  * the live API rejects with a 400) — "all" returns both in one list, and each

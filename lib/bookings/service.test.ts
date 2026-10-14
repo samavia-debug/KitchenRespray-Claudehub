@@ -1,0 +1,355 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// ---- A small in-memory stand-in for the database ----
+type Row = Record<string, any>;
+const db: { links: Row[]; state: Row; failInsert: boolean } = { links: [], state: {}, failInsert: false };
+
+function exec(q: any): { data?: any; error: { message: string } | null; count?: number } {
+  if (q.table === "booking_shift_links") {
+    if (q.op === "select") return q.head ? { error: null, count: db.links.length } : { data: db.links.map((r) => ({ ...r })), error: null };
+    if (q.op === "insert") {
+      if (db.failInsert) return { error: { message: "insert refused" } };
+      db.links.push({ ...q.payload });
+      return { error: null };
+    }
+    const id = q.filters.find((f: any[]) => f[0] === "booking_id")?.[1];
+    if (q.op === "update") {
+      const row = db.links.find((r) => r.booking_id === id);
+      if (row) Object.assign(row, q.payload);
+      return { error: null };
+    }
+    if (q.op === "delete") {
+      db.links = db.links.filter((r) => r.booking_id !== id);
+      return { error: null };
+    }
+  }
+  if (q.table === "booking_sync_state") {
+    if (q.op === "update" && q.orStr) {
+      const running = db.state.running_since ? Date.parse(db.state.running_since) : 0;
+      if (!db.state.running_since || running < Date.now() - 10 * 60_000) {
+        Object.assign(db.state, q.payload);
+        return { data: [{ id: 1 }], error: null };
+      }
+      return { data: [], error: null };
+    }
+    if (q.op === "update") {
+      Object.assign(db.state, q.payload);
+      return { error: null };
+    }
+    return { data: db.state, error: null };
+  }
+  return { data: [], error: null };
+}
+
+function from(table: string) {
+  const q: any = { table, op: "select", filters: [] };
+  const api: any = {
+    select(_c?: string, opts?: any) {
+      q.head = opts?.head;
+      return api;
+    },
+    insert(p: any) {
+      q.op = "insert";
+      q.payload = p;
+      return api;
+    },
+    update(p: any) {
+      q.op = "update";
+      q.payload = p;
+      return api;
+    },
+    delete() {
+      q.op = "delete";
+      return api;
+    },
+    eq(c: string, v: any) {
+      q.filters.push([c, v]);
+      return api;
+    },
+    or(s: string) {
+      q.orStr = s;
+      return api;
+    },
+    maybeSingle() {
+      return api;
+    },
+    then(res: any, rej: any) {
+      return Promise.resolve(exec(q)).then(res, rej);
+    },
+  };
+  return api;
+}
+
+vi.mock("@/lib/supabase/service", () => ({ createServiceClient: () => ({ from }) }));
+
+import { runBookingsSync } from "./service";
+import { resetGraphTokenCache } from "./graph";
+
+// ---- Fake Microsoft and Connecteam ----
+type Appt = Record<string, any>;
+const world: { appts: Appt[]; schedulers: any[]; calls: { method: string; url: string; body?: any }[]; nextId: number; createStatus: number; deleteStatus: number } = {
+  appts: [],
+  schedulers: [],
+  calls: [],
+  nextId: 1,
+  createStatus: 200,
+  deleteStatus: 200,
+};
+
+const stamp = (daysAhead: number, hour = 10) => {
+  const d = new Date(Date.now() + daysAhead * 86_400_000);
+  d.setUTCHours(hour, 0, 0, 0);
+  return d;
+};
+const gdt = (d: Date) => ({ dateTime: d.toISOString().slice(0, 19) + ".0000000", timeZone: "UTC" });
+const appt = (id: string, daysAhead: number, name = "Mary O'Brien", service = "Kylemore"): Appt => {
+  const start = stamp(daysAhead);
+  return { id, serviceName: service, start: gdt(start), end: gdt(new Date(start.getTime() + 1_800_000)), customers: [{ name }] };
+};
+
+function installFetch() {
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      const method = init?.method ?? "GET";
+      const body = init?.body && typeof init.body === "string" && init.body.startsWith("[") ? JSON.parse(init.body) : undefined;
+      world.calls.push({ method, url, body });
+      if (url.includes("login.microsoftonline.com")) return new Response(JSON.stringify({ access_token: "tok", expires_in: 3600 }));
+      if (url.includes("graph.microsoft.com")) return new Response(JSON.stringify({ value: world.appts }));
+      if (url.endsWith("/scheduler/v1/schedulers")) return new Response(JSON.stringify({ data: { schedulers: world.schedulers } }));
+      if (method === "POST" && url.includes("/shifts")) {
+        if (world.createStatus !== 200) return new Response("nope", { status: world.createStatus });
+        return new Response(JSON.stringify({ data: { shifts: [{ id: `shift-${world.nextId++}` }] } }));
+      }
+      if (method === "PUT" && url.includes("/shifts")) return new Response(JSON.stringify({}));
+      if (method === "DELETE") return world.deleteStatus === 200 ? new Response("") : new Response("gone", { status: world.deleteStatus });
+      return new Response("unexpected", { status: 500 });
+    })
+  );
+}
+
+const posts = () => world.calls.filter((c) => c.method === "POST" && c.url.includes("/shifts"));
+const puts = () => world.calls.filter((c) => c.method === "PUT");
+const deletes = () => world.calls.filter((c) => c.method === "DELETE");
+
+const ENV = {
+  MS_GRAPH_TENANT_ID: "tenant",
+  MS_GRAPH_CLIENT_ID: "client",
+  MS_GRAPH_CLIENT_SECRET: "secret",
+  MS_BOOKINGS_BUSINESS_ID: "biz@example.com",
+  CONNECTEAM_API_KEY: "key",
+  BOOKINGS_TO_CONNECTEAM_ENABLED: "true",
+};
+
+function setEnv(over: Record<string, string | undefined> = {}) {
+  for (const k of Object.keys(ENV)) delete process.env[k];
+  delete process.env.CONNECTEAM_APPOINTMENT_USER_IDS;
+  delete process.env.CONNECTEAM_APPOINTMENT_SCHEDULER_ID;
+  delete process.env.BOOKINGS_SERVICE_LABELS;
+  for (const [k, v] of Object.entries({ ...ENV, ...over })) if (v !== undefined) process.env[k] = v;
+}
+
+beforeEach(() => {
+  db.links = [];
+  db.state = { id: 1, running_since: null, last_run_at: null, last_result: null };
+  db.failInsert = false;
+  world.appts = [];
+  world.schedulers = [{ schedulerId: 55, name: "Showroom Appointment" }, { schedulerId: 1, name: "Schedule" }];
+  world.calls = [];
+  world.nextId = 1;
+  world.createStatus = 200;
+  world.deleteStatus = 200;
+  resetGraphTokenCache();
+  setEnv();
+  installFetch();
+});
+afterEach(() => vi.unstubAllGlobals());
+
+describe("switched off by default", () => {
+  it("does nothing, and contacts nobody, until the Microsoft details exist", async () => {
+    setEnv({ MS_GRAPH_CLIENT_SECRET: undefined });
+    const r = await runBookingsSync({ apply: true });
+    expect(r.state).toBe("not_configured");
+    expect(world.calls).toEqual([]);
+    expect(db.links).toEqual([]);
+  });
+
+  it("needs Connecteam to be connected too", async () => {
+    setEnv({ CONNECTEAM_API_KEY: undefined });
+    expect((await runBookingsSync({ apply: true })).state).toBe("not_configured");
+    expect(world.calls).toEqual([]);
+  });
+
+  it("only previews, changing nothing, when asked to preview", async () => {
+    world.appts = [appt("a", 2)];
+    const r = await runBookingsSync({ apply: false });
+    expect(r.state).toBe("preview");
+    expect(r.counts).toMatchObject({ create: 1, update: 0, remove: 0 });
+    expect(r.items?.[0]).toMatchObject({ action: "create", service: "Kylemore", firstName: "Mary" });
+    expect(posts()).toHaveLength(0);
+    expect(db.links).toEqual([]);
+  });
+
+  it("only previews when writing to Connecteam has not been switched on, even if asked to copy", async () => {
+    setEnv({ BOOKINGS_TO_CONNECTEAM_ENABLED: undefined });
+    world.appts = [appt("a", 2)];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.state).toBe("preview");
+    expect(r.message).toMatch(/switched off/);
+    expect(posts()).toHaveLength(0);
+    expect(deletes()).toHaveLength(0);
+    expect(db.links).toEqual([]);
+  });
+});
+
+describe("copying bookings", () => {
+  it("creates an open shift in the Showroom Appointment scheduler, with a first name only, and records the link", async () => {
+    world.appts = [appt("a", 2, "Mary O'Brien")];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.state).toBe("applied");
+    expect(r.errors).toEqual([]);
+    expect(posts()).toHaveLength(1);
+    expect(posts()[0].url).toContain("/schedulers/55/shifts"); // not the "Schedule" scheduler
+    const sent = posts()[0].body[0];
+    expect(sent.title).toBe("Showroom visit – Kylemore – Mary");
+    expect(sent).toMatchObject({ isPublished: true, isOpenShift: true, openSpots: 1 });
+    expect(JSON.stringify(sent)).not.toMatch(/O'Brien|@/); // no surname or contact details
+    expect(db.links).toHaveLength(1);
+    expect(db.links[0]).toMatchObject({ booking_id: "a", shift_id: "shift-1", scheduler_id: 55 });
+    expect(db.state.running_since).toBeNull(); // lock released
+  });
+
+  it("assigns the people it is told to", async () => {
+    setEnv({ CONNECTEAM_APPOINTMENT_USER_IDS: "11,22" });
+    world.appts = [appt("a", 2)];
+    await runBookingsSync({ apply: true });
+    expect(posts()[0].body[0].assignedUserIds).toEqual([11, 22]);
+    expect(posts()[0].body[0]).not.toHaveProperty("isOpenShift");
+  });
+
+  it("copies nothing twice", async () => {
+    world.appts = [appt("a", 2), appt("b", 3, "Tom Byrne", "Bray")];
+    await runBookingsSync({ apply: true });
+    world.calls = [];
+    const again = await runBookingsSync({ apply: true });
+    expect(again.counts).toMatchObject({ create: 0, update: 0, remove: 0, unchanged: 2 });
+    expect(posts()).toHaveLength(0);
+    expect(puts()).toHaveLength(0);
+    expect(deletes()).toHaveLength(0);
+    expect(db.links).toHaveLength(2);
+  });
+
+  it("moves a rescheduled booking's shift", async () => {
+    world.appts = [appt("a", 2)];
+    await runBookingsSync({ apply: true });
+    world.appts = [appt("a", 4)];
+    world.calls = [];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.counts).toMatchObject({ create: 0, update: 1, remove: 0 });
+    expect(puts()).toHaveLength(1);
+    expect(puts()[0].url).toContain("/schedulers/55/shifts");
+    expect(puts()[0].body[0]).toMatchObject({ id: "shift-1" });
+    expect(Date.parse(db.links[0].start_at) / 1000).toBe(Math.floor(stamp(4).getTime() / 1000));
+  });
+
+  it("removes the shift of a cancelled booking", async () => {
+    world.appts = [appt("a", 2), appt("b", 3)];
+    await runBookingsSync({ apply: true });
+    world.appts = [appt("a", 2)];
+    world.calls = [];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.counts).toMatchObject({ remove: 1 });
+    expect(deletes()).toHaveLength(1);
+    expect(deletes()[0].url).toContain("/schedulers/55/shifts/shift-2");
+    expect(db.links.map((l) => l.booking_id)).toEqual(["a"]);
+  });
+
+  it("still forgets a booking whose shift was already deleted in Connecteam", async () => {
+    world.appts = [appt("a", 2), appt("b", 3)];
+    await runBookingsSync({ apply: true });
+    world.appts = [appt("a", 2)];
+    world.deleteStatus = 404;
+    const r = await runBookingsSync({ apply: true });
+    expect(r.errors).toEqual([]);
+    expect(db.links.map((l) => l.booking_id)).toEqual(["a"]);
+  });
+
+  it("will not wipe the calendar because Microsoft returned nothing", async () => {
+    world.appts = [appt("a", 2), appt("b", 3), appt("c", 4)];
+    await runBookingsSync({ apply: true });
+    world.appts = [];
+    world.calls = [];
+    const r = await runBookingsSync({ apply: true });
+    expect(deletes()).toHaveLength(0);
+    expect(r.held[0]).toMatch(/failed read/);
+    expect(db.links).toHaveLength(3);
+  });
+});
+
+describe("when something goes wrong", () => {
+  it("takes a new shift back out if its link cannot be recorded, so it is not copied twice", async () => {
+    world.appts = [appt("a", 2)];
+    db.failInsert = true;
+    const r = await runBookingsSync({ apply: true });
+    expect(r.errors[0]).toMatch(/could not record the link/);
+    expect(deletes()).toHaveLength(1);
+    expect(deletes()[0].url).toContain("shift-1");
+    expect(db.links).toEqual([]);
+  });
+
+  it("carries on with the others when one create is rejected, and says which failed", async () => {
+    world.appts = [appt("a", 2)];
+    world.createStatus = 400;
+    const r = await runBookingsSync({ apply: true });
+    expect(r.state).toBe("applied");
+    expect(r.errors[0]).toMatch(/Create failed: Connecteam API returned HTTP 400/);
+    expect(db.links).toEqual([]);
+    expect(db.state.running_since).toBeNull();
+  });
+
+  it("refuses to run twice at once", async () => {
+    db.state.running_since = new Date().toISOString();
+    world.appts = [appt("a", 2)];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.state).toBe("busy");
+    expect(world.calls).toEqual([]);
+  });
+
+  it("takes over a lock left behind by a run that died", async () => {
+    db.state.running_since = new Date(Date.now() - 30 * 60_000).toISOString();
+    world.appts = [appt("a", 2)];
+    expect((await runBookingsSync({ apply: true })).state).toBe("applied");
+  });
+
+  it("explains a missing scheduler instead of guessing one", async () => {
+    world.schedulers = [{ schedulerId: 1, name: "Schedule" }];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.state).toBe("error");
+    expect(r.message).toMatch(/No Connecteam scheduler called "Showroom Appointment"/);
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("reports a Microsoft failure without copying anything", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) =>
+        url.includes("login.")
+          ? new Response("no", { status: 401 })
+          : url.endsWith("/scheduler/v1/schedulers")
+          ? new Response(JSON.stringify({ data: { schedulers: world.schedulers } }))
+          : new Response("{}")
+      )
+    );
+    const r = await runBookingsSync({ apply: true });
+    expect(r.state).toBe("error");
+    expect(r.message).toMatch(/Microsoft sign-in failed/);
+    expect(db.links).toEqual([]);
+  });
+
+  it("counts appointments it could not read instead of copying them at a guessed time", async () => {
+    world.appts = [{ id: "x", serviceName: "Bray", startDateTime: { dateTime: "2026-10-20T10:00:00", timeZone: "Mars" }, endDateTime: { dateTime: "2026-10-20T10:30:00", timeZone: "Mars" } }];
+    const r = await runBookingsSync({ apply: false });
+    expect(r.skippedAppointments).toBe(1);
+    expect(r.counts?.create).toBe(0);
+  });
+});

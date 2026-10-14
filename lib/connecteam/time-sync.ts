@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import { fetchAllRows } from "@/lib/supabase/paginate";
+import { isAppointmentScheduler } from "@/lib/bookings/config";
 import {
   fetchJobs,
   fetchScheduledShifts,
@@ -226,7 +227,8 @@ export async function syncSchedule(): Promise<ScheduleSyncResult> {
   const startSec = nowSec - (backfill ? 120 : 21) * 86_400;
   const endSec = nowSec + 90 * 86_400;
 
-  const schedulers = (await fetchSchedulers()).filter((s) => !s.isArchived);
+  // The Showroom Appointment scheduler holds customer appointments, not working shifts, so it is not part of the rota figures.
+  const schedulers = (await fetchSchedulers()).filter((s) => !s.isArchived && !isAppointmentScheduler(s));
   const byId = new Map<string, ScheduledShiftRow>();
   for (const scheduler of schedulers) {
     const shifts = await fetchScheduledShifts(scheduler.schedulerId, startSec, endSec);

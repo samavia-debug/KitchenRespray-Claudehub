@@ -9,6 +9,8 @@ import { getPpeStatus, syncPpeRequests } from "@/lib/connecteam/ppe-sync";
 import { getScheduleStatus, getTimeClockStatus, getTimeOffStatus, syncSchedule, syncTimeClock, syncTimeOff } from "@/lib/connecteam/time-sync";
 import { notifySlack, notifyWhatsApp } from "@/lib/monitoring/notify";
 import { sendComplianceAlerts } from "@/lib/compliance/service";
+import { bookingsWriteEnabled, graphConfig } from "@/lib/bookings/config";
+import { runBookingsSync } from "@/lib/bookings/service";
 
 const CONCURRENCY = 5;
 
@@ -292,6 +294,22 @@ async function runCron(request: NextRequest) {
     }
   }
 
+  // Website appointments into the Showroom Appointment calendar. Dormant until the Microsoft
+  // credentials are set AND writing has been switched on, so it does nothing by default.
+  let bookingsSync: { state?: string; counts?: unknown; errors?: number; held?: number; error?: string; skipped?: string } = { skipped: "not switched on" };
+  if (graphConfig() && bookingsWriteEnabled() && isConnecteamConfigured()) {
+    if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_TIME_BUDGET_MS) {
+      bookingsSync = { skipped: "out of time budget" };
+    } else {
+      try {
+        const r = await runBookingsSync({ apply: true });
+        bookingsSync = { state: r.state, counts: r.counts, errors: r.errors.length, held: r.held.length, ...(r.state === "error" ? { error: r.message } : {}) };
+      } catch (err: any) {
+        bookingsSync = { error: err.message };
+      }
+    }
+  }
+
   // Expiry warnings go out in working hours only, so nobody is woken for a licence that runs out next month.
   let complianceAlerts: { sent?: number; error?: string; skipped?: string } = { skipped: "outside working hours" };
   const dublinHour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Dublin", hour: "2-digit", hourCycle: "h23" }).format(Date.now()));
@@ -320,6 +338,7 @@ async function runCron(request: NextRequest) {
     scheduleSync,
     timeOffSync,
     complianceAlerts,
+    bookingsSync,
   });
 }
 
