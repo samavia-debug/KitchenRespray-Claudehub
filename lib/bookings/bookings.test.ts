@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { firstNameOf, graphDateToSec, normaliseAppointments, shiftTitle, type RawAppointment } from "./appointments";
 import { appointmentAssignees, appointmentSchedulerIdFromEnv, bookingsWriteEnabled, graphConfig, isAppointmentScheduler, serviceLabels } from "./config";
-import { fetchBookingAppointments, resetGraphTokenCache } from "./graph";
+import { fetchBookingAppointments, resetGraphTokenCache, tokenRoles } from "./graph";
 import { PLAN_LIMITS, planSync, signatureOf, type DesiredShift, type ShiftLink } from "./plan";
 import { createdShiftId, shiftPayload } from "../connecteam/shifts-write";
 
@@ -206,6 +206,16 @@ describe("settings", () => {
     });
   });
 
+  it("ignores spaces, line breaks and quote marks pasted in with a value", () => {
+    const cfg = graphConfig({
+      MS_GRAPH_TENANT_ID: " tenant\n",
+      MS_GRAPH_CLIENT_ID: '"client"',
+      MS_GRAPH_CLIENT_SECRET: "'sec~ret'  ",
+      MS_BOOKINGS_BUSINESS_ID: "biz@example.com ",
+    } as any);
+    expect(cfg).toEqual({ tenantId: "tenant", clientId: "client", clientSecret: "sec~ret", businessId: "biz@example.com" });
+  });
+
   it("only writes to Connecteam on an explicit yes", () => {
     expect(bookingsWriteEnabled({} as any)).toBe(false);
     expect(bookingsWriteEnabled({ BOOKINGS_TO_CONNECTEAM_ENABLED: "yes" } as any)).toBe(false);
@@ -268,6 +278,65 @@ describe("Microsoft Graph reading", () => {
     expect(rows.map((r) => r.id)).toEqual(["a", "b"]);
     expect(calls[1]).toContain("/solutions/bookingBusinesses/Bookings%40example.com/calendarView?start=2026-10-14");
     expect(calls.filter((u) => u.includes("login.microsoftonline.com"))).toHaveLength(1);
+  });
+
+  it("says which part of the sign-in is wrong, using Microsoft's code, without repeating anything it sent", async () => {
+    const reply = (code: number) =>
+      vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ error: "invalid_client", error_codes: [code], error_description: "AADSTS secret=SECRET-VALUE trace 123" }), { status: 401 })));
+
+    reply(7000215);
+    let err = (await fetchBookingAppointments(cfg, "a", "b").catch((e: unknown) => e)) as Error;
+    expect(err.message).toMatch(/HTTP 401, AADSTS7000215\)\. The client secret is wrong\. Use the secret's Value \(not its Secret ID\)/);
+    expect(err.message).not.toMatch(/SECRET-VALUE|trace/);
+
+    reply(7000222);
+    err = (await fetchBookingAppointments(cfg, "a", "b").catch((e: unknown) => e)) as Error;
+    expect(err.message).toMatch(/has expired/);
+
+    reply(700016);
+    err = (await fetchBookingAppointments(cfg, "a", "b").catch((e: unknown) => e)) as Error;
+    expect(err.message).toMatch(/client id was not found/);
+
+    reply(90002);
+    err = (await fetchBookingAppointments(cfg, "a", "b").catch((e: unknown) => e)) as Error;
+    expect(err.message).toMatch(/tenant id was not found/);
+
+    reply(123456);
+    err = (await fetchBookingAppointments(cfg, "a", "b").catch((e: unknown) => e)) as Error;
+    expect(err.message).toMatch(/AADSTS123456\)\. Check the tenant id, client id and secret/);
+  });
+
+  it("reads the permissions a token carries, and nothing else from it", () => {
+    const jwt = (payload: object) => `h.${Buffer.from(JSON.stringify(payload)).toString("base64url")}.s`;
+    expect(tokenRoles(jwt({ roles: ["Bookings.Read.All", "User.Read.All"], sub: "secret-subject" }))).toEqual(["Bookings.Read.All", "User.Read.All"]);
+    expect(tokenRoles(jwt({ aud: "graph" }))).toEqual([]);
+    expect(tokenRoles("not-a-token")).toBeNull();
+  });
+
+  it("explains a Bookings refusal by showing what the app's sign-in actually carries", async () => {
+    const jwt = (roles: string[]) => `h.${Buffer.from(JSON.stringify({ roles })).toString("base64url")}.s`;
+    const run = async (roles: string[], status: number) => {
+      resetGraphTokenCache();
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async (url: string) =>
+          url.includes("login.microsoftonline.com")
+            ? new Response(JSON.stringify({ access_token: jwt(roles), expires_in: 3600 }))
+            : new Response(JSON.stringify({ error: { code: "Unauthorized", message: "token abc-123" } }), { status })
+        )
+      );
+      return ((await fetchBookingAppointments(cfg, "a", "b").catch((e: unknown) => e)) as Error).message;
+    };
+
+    const none = await run([], 401);
+    expect(none).toMatch(/HTTP 401 \(Unauthorized\)/);
+    expect(none).toMatch(/no application permissions at all.*Delegated/);
+    expect(none).not.toContain("abc-123");
+
+    expect(await run(["User.Read.All"], 403)).toMatch(/no Bookings one: User\.Read\.All/);
+    expect(await run(["Bookings.Read.All"], 401)).toMatch(/does carry Bookings\.Read\.All, so the permission is in place/);
+    // Other failures do not get a permission explanation.
+    expect(await run(["Bookings.Read.All"], 404)).not.toMatch(/carry/);
   });
 
   it("never follows a paging link to another site", async () => {

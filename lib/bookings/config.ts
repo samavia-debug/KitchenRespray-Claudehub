@@ -7,11 +7,14 @@ export const APPOINTMENT_SCHEDULER_NAME = "Showroom Appointment";
 
 export type GraphConfig = { tenantId: string; clientId: string; clientSecret: string; businessId: string };
 
+// Pasting into a settings box often brings spaces, line breaks or quote marks with it.
+const tidy = (v: string | undefined) => v?.trim().replace(/^(["'])([\s\S]*)\1$/, "$2").trim();
+
 export function graphConfig(env: NodeJS.ProcessEnv = process.env): GraphConfig | null {
-  const tenantId = env.MS_GRAPH_TENANT_ID?.trim();
-  const clientId = env.MS_GRAPH_CLIENT_ID?.trim();
-  const clientSecret = env.MS_GRAPH_CLIENT_SECRET?.trim();
-  const businessId = env.MS_BOOKINGS_BUSINESS_ID?.trim();
+  const tenantId = tidy(env.MS_GRAPH_TENANT_ID);
+  const clientId = tidy(env.MS_GRAPH_CLIENT_ID);
+  const clientSecret = tidy(env.MS_GRAPH_CLIENT_SECRET);
+  const businessId = tidy(env.MS_BOOKINGS_BUSINESS_ID);
   return tenantId && clientId && clientSecret && businessId ? { tenantId, clientId, clientSecret, businessId } : null;
 }
 
