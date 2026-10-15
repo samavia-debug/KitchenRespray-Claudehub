@@ -144,6 +144,7 @@ const ENV = {
 function setEnv(over: Record<string, string | undefined> = {}) {
   for (const k of Object.keys(ENV)) delete process.env[k];
   delete process.env.CONNECTEAM_APPOINTMENT_USER_IDS;
+  delete process.env.BOOKINGS_SERVICE_ASSIGNEES;
   delete process.env.CONNECTEAM_APPOINTMENT_SCHEDULER_ID;
   delete process.env.BOOKINGS_SERVICE_LABELS;
   for (const [k, v] of Object.entries({ ...ENV, ...over })) if (v !== undefined) process.env[k] = v;
@@ -225,6 +226,28 @@ describe("copying bookings", () => {
     await runBookingsSync({ apply: true });
     expect(posts()[0].body[0].assignedUserIds).toEqual([11, 22]);
     expect(posts()[0].body[0]).not.toHaveProperty("isOpenShift");
+  });
+
+  it("puts each showroom's bookings under its own person, leaving others open", async () => {
+    setEnv({ BOOKINGS_SERVICE_ASSIGNEES: '{"Kylemore":111,"Bray":222}' });
+    world.appts = [appt("k", 2, "Sarah Byrne", "KYLEMORE"), appt("b", 3, "Tom Ryan", "Bray"), appt("s", 4, "Olivia Doyle", "Sandyford")];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.errors).toEqual([]);
+    const byTitle = (needle: string) => posts().map((p) => p.body[0]).find((b: any) => b.title.includes(needle));
+    expect(byTitle("Sarah").assignedUserIds).toEqual([111]);
+    expect(byTitle("Tom").assignedUserIds).toEqual([222]);
+    expect(byTitle("Olivia")).toMatchObject({ isOpenShift: true });
+    expect(byTitle("Olivia")).not.toHaveProperty("assignedUserIds");
+  });
+
+  it("moves existing shifts to the right person when the assignment changes", async () => {
+    world.appts = [appt("k", 2, "Sarah Byrne", "Kylemore")];
+    await runBookingsSync({ apply: true }); // copied as an open shift
+    setEnv({ BOOKINGS_SERVICE_ASSIGNEES: '{"Kylemore":111}' });
+    world.calls = [];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.counts).toMatchObject({ create: 0, update: 1 });
+    expect(puts()[0].body[0]).toMatchObject({ id: "shift-1", assignedUserIds: [111], isOpenShift: false });
   });
 
   it("copies nothing twice", async () => {

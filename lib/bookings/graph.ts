@@ -91,14 +91,23 @@ async function accessToken(cfg: GraphConfig): Promise<string> {
  * graph.microsoft.com, so a crafted link can't send the token elsewhere.
  */
 export async function fetchBookingAppointments(cfg: GraphConfig, fromIso: string, toIso: string): Promise<RawAppointment[]> {
-  const token = await accessToken(cfg);
+  let token = await accessToken(cfg);
+  // A token minted before a permission was granted carries no permissions and stays valid for an
+  // hour, so a refusal gets exactly one retry with a freshly issued token.
+  let retried = false;
   let url: string | null =
     `https://graph.microsoft.com/v1.0/solutions/bookingBusinesses/${encodeURIComponent(cfg.businessId)}/calendarView?start=${encodeURIComponent(fromIso)}&end=${encodeURIComponent(toIso)}`;
   const all: RawAppointment[] = [];
 
   for (let page = 0; page < MAX_PAGES && url; page++) {
     if (!url.startsWith("https://graph.microsoft.com/")) throw new Error("Microsoft returned an unexpected paging link.");
-    const res: Response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    let res: Response = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    if ((res.status === 401 || res.status === 403) && !retried) {
+      retried = true;
+      resetGraphTokenCache();
+      token = await accessToken(cfg);
+      res = await fetch(url, { headers: { Authorization: `Bearer ${token}`, Accept: "application/json" } });
+    }
     if (!res.ok) {
       let code = "";
       try {

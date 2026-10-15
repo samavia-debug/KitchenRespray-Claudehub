@@ -36,6 +36,39 @@ export function appointmentAssignees(env: NodeJS.ProcessEnv = process.env): numb
     .filter((n) => Number.isSafeInteger(n) && n > 0);
 }
 
+const positiveIds = (v: unknown): number[] =>
+  (Array.isArray(v) ? v : [v]).map((x) => Number(x)).filter((n) => Number.isSafeInteger(n) && n > 0);
+
+/**
+ * Who each showroom's appointments belong to, such as {"Kylemore":123,"Bray":456}
+ * (one person or a list). Names are matched without regard to capitals or spacing, so
+ * "KYLEMORE" in Bookings finds "Kylemore". Anything unreadable is ignored.
+ */
+export function serviceAssignees(env: NodeJS.ProcessEnv = process.env): Record<string, number[]> {
+  try {
+    const parsed = JSON.parse(env.BOOKINGS_SERVICE_ASSIGNEES || "{}");
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    const out: Record<string, number[]> = {};
+    for (const [name, ids] of Object.entries(parsed)) {
+      const list = positiveIds(ids);
+      if (list.length > 0) out[name.trim().toLowerCase()] = list;
+    }
+    return out;
+  } catch {
+    return {};
+  }
+}
+
+/** The people an appointment for this showroom goes to: its own list, else the general list, else nobody (an open shift). */
+export function assigneesFor(service: string, env: NodeJS.ProcessEnv = process.env): number[] {
+  return serviceAssignees(env)[service.trim().toLowerCase()] ?? appointmentAssignees(env);
+}
+
+/** True when any assignment is configured, for the status line. */
+export function hasAssignments(env: NodeJS.ProcessEnv = process.env): boolean {
+  return appointmentAssignees(env).length > 0 || Object.keys(serviceAssignees(env)).length > 0;
+}
+
 /** Optional renames such as {"Sandyford":"Home visit"}, so the shift title reads the way the team talks. */
 export function serviceLabels(env: NodeJS.ProcessEnv = process.env): Record<string, string> {
   try {

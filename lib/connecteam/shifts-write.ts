@@ -26,6 +26,11 @@ export function shiftPayload(s: NewShift): Record<string, unknown> {
   return body;
 }
 
+/** Changing a shift can move it between open and assigned, so an update says which it now is. */
+export function shiftUpdatePayload(id: string, s: NewShift): Record<string, unknown> {
+  return { id, ...shiftPayload(s), ...(s.assignees.length > 0 ? { isOpenShift: false } : {}), isEditForAllUsers: true };
+}
+
 /** Connecteam's answer to a create carries the new shifts; anything else is not trusted as a success. */
 export function createdShiftId(response: unknown): string | null {
   const shifts = (response as { data?: { shifts?: { id?: unknown }[] } } | null)?.data?.shifts;
@@ -41,7 +46,7 @@ export async function createShift(schedulerId: number, s: NewShift): Promise<str
 }
 
 export async function updateShift(schedulerId: number, shiftId: string, s: NewShift): Promise<void> {
-  await connecteamSend("PUT", `/scheduler/v1/schedulers/${schedulerId}/shifts`, [{ id: shiftId, ...shiftPayload(s), isEditForAllUsers: true }]);
+  await connecteamSend("PUT", `/scheduler/v1/schedulers/${schedulerId}/shifts`, [shiftUpdatePayload(shiftId, s)]);
 }
 
 export async function deleteShift(schedulerId: number, shiftId: string): Promise<void> {

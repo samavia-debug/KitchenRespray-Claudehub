@@ -2,7 +2,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { fetchSchedulers, isConnecteamConfigured } from "@/lib/connecteam/client";
 import { createShift, deleteShift, updateShift } from "@/lib/connecteam/shifts-write";
 import { normaliseAppointments, shiftTitle } from "./appointments";
-import { APPOINTMENT_SCHEDULER_NAME, appointmentAssignees, appointmentSchedulerIdFromEnv, bookingsWriteEnabled, graphConfig, serviceLabels } from "./config";
+import { APPOINTMENT_SCHEDULER_NAME, appointmentSchedulerIdFromEnv, assigneesFor, bookingsWriteEnabled, graphConfig, hasAssignments, serviceLabels } from "./config";
 import { fetchBookingAppointments } from "./graph";
 import { planSync, signatureOf, type DesiredShift, type ShiftLink } from "./plan";
 
@@ -46,7 +46,7 @@ export async function getBookingsStatus(): Promise<BookingsStatus> {
     microsoftConfigured: graphConfig() !== null,
     connecteamConfigured: isConnecteamConfigured(),
     writeEnabled: bookingsWriteEnabled(),
-    assignedTo: appointmentAssignees().length > 0 ? "people" : "unassigned",
+    assignedTo: hasAssignments() ? "people" : "unassigned",
     linked: count ?? 0,
     lastRunAt: (state?.last_run_at as string | null) ?? null,
     lastResult: (state?.last_result as BookingsStatus["lastResult"]) ?? null,
@@ -129,14 +129,14 @@ export async function runBookingsSync({ apply }: { apply: boolean }): Promise<Ru
     out.skippedAppointments = skipped;
 
     const labels = serviceLabels();
-    const assignees = appointmentAssignees();
     const desired: DesiredShift[] = appointments.map((a) => ({
       bookingId: a.id,
       service: a.service,
       startSec: a.startSec,
       endSec: a.endSec,
       title: shiftTitle(a, labels),
-      assignees,
+      // Each showroom can belong to a different person.
+      assignees: assigneesFor(a.service),
     }));
     const firstNames = new Map(appointments.map((a) => [a.id, a.firstName]));
 

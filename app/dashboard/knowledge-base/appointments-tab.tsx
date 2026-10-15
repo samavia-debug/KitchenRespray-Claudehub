@@ -184,8 +184,9 @@ export default function AppointmentsTab() {
             <code>BOOKINGS_TO_CONNECTEAM_ENABLED=true</code>: the separate switch that allows writing into Connecteam
           </li>
           <li>
-            Optional: <code>CONNECTEAM_APPOINTMENT_USER_IDS</code> (assign to people instead of open shifts), <code>CONNECTEAM_APPOINTMENT_SCHEDULER_ID</code>, and{" "}
-            <code>BOOKINGS_SERVICE_LABELS</code> to rename a service in the shift title
+            Optional: <code>BOOKINGS_SERVICE_ASSIGNEES</code> (who each showroom&apos;s appointments belong to, for example{" "}
+            <code>{`{"Kylemore":123,"Bray":456}`}</code>), <code>CONNECTEAM_APPOINTMENT_USER_IDS</code> (everyone else; otherwise open shifts),{" "}
+            <code>CONNECTEAM_APPOINTMENT_SCHEDULER_ID</code>, and <code>BOOKINGS_SERVICE_LABELS</code> to rename a service in the shift title
           </li>
         </ul>
       </div>

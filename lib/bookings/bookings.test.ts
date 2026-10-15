@@ -1,9 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { firstNameOf, graphDateToSec, normaliseAppointments, shiftTitle, type RawAppointment } from "./appointments";
-import { appointmentAssignees, appointmentSchedulerIdFromEnv, bookingsWriteEnabled, graphConfig, isAppointmentScheduler, serviceLabels } from "./config";
+import { appointmentAssignees, appointmentSchedulerIdFromEnv, assigneesFor, bookingsWriteEnabled, graphConfig, hasAssignments, isAppointmentScheduler, serviceAssignees, serviceLabels } from "./config";
 import { fetchBookingAppointments, resetGraphTokenCache, tokenRoles } from "./graph";
 import { PLAN_LIMITS, planSync, signatureOf, type DesiredShift, type ShiftLink } from "./plan";
-import { createdShiftId, shiftPayload } from "../connecteam/shifts-write";
+import { createdShiftId, shiftPayload, shiftUpdatePayload } from "../connecteam/shifts-write";
 
 describe("appointment times", () => {
   const sec = (iso: string) => Date.parse(iso) / 1000;
@@ -231,6 +231,25 @@ describe("settings", () => {
     expect(appointmentSchedulerIdFromEnv({ CONNECTEAM_APPOINTMENT_SCHEDULER_ID: "abc" } as any)).toBeNull();
   });
 
+  it("gives each showroom its own people, matched however Bookings spells the name", () => {
+    const env = { BOOKINGS_SERVICE_ASSIGNEES: '{"Kylemore": 111, " Bray ": [222, 333], "Bad": "x", "Empty": []}', CONNECTEAM_APPOINTMENT_USER_IDS: "999" } as any;
+    expect(serviceAssignees(env)).toEqual({ kylemore: [111], bray: [222, 333] });
+    expect(assigneesFor("KYLEMORE", env)).toEqual([111]);
+    expect(assigneesFor("bray", env)).toEqual([222, 333]);
+    // A showroom with no entry falls back to the general list, then to nobody.
+    expect(assigneesFor("Sandyford", env)).toEqual([999]);
+    expect(assigneesFor("Sandyford", { BOOKINGS_SERVICE_ASSIGNEES: '{"Bray":1}' } as any)).toEqual([]);
+    expect(hasAssignments(env)).toBe(true);
+    expect(hasAssignments({ BOOKINGS_SERVICE_ASSIGNEES: '{"Bray":1}' } as any)).toBe(true);
+    expect(hasAssignments({} as any)).toBe(false);
+  });
+
+  it("ignores an assignment setting it cannot read", () => {
+    expect(serviceAssignees({ BOOKINGS_SERVICE_ASSIGNEES: "nonsense" } as any)).toEqual({});
+    expect(serviceAssignees({ BOOKINGS_SERVICE_ASSIGNEES: "[1,2]" } as any)).toEqual({});
+    expect(serviceAssignees({} as any)).toEqual({});
+  });
+
   it("recognises the appointment scheduler by name or by id, and no other", () => {
     expect(isAppointmentScheduler({ schedulerId: 1, name: " Showroom Appointment " }, {} as any)).toBe(true);
     expect(isAppointmentScheduler({ schedulerId: 9, name: "Anything" }, { CONNECTEAM_APPOINTMENT_SCHEDULER_ID: "9" } as any)).toBe(true);
@@ -245,6 +264,11 @@ describe("Connecteam shift payload", () => {
     const open = shiftPayload({ startSec: 100, endSec: 200, title: "T", assignees: [] });
     expect(open).toMatchObject({ isOpenShift: true, openSpots: 1 });
     expect(open).not.toHaveProperty("assignedUserIds");
+  });
+
+  it("says on an update whether the shift is now assigned or open", () => {
+    expect(shiftUpdatePayload("s1", { startSec: 1, endSec: 2, title: "T", assignees: [5] })).toMatchObject({ id: "s1", assignedUserIds: [5], isOpenShift: false, isEditForAllUsers: true });
+    expect(shiftUpdatePayload("s1", { startSec: 1, endSec: 2, title: "T", assignees: [] })).toMatchObject({ id: "s1", isOpenShift: true, openSpots: 1 });
   });
 
   it("only trusts a create that names the shift it made", () => {
@@ -337,6 +361,45 @@ describe("Microsoft Graph reading", () => {
     expect(await run(["Bookings.Read.All"], 401)).toMatch(/does carry Bookings\.Read\.All, so the permission is in place/);
     // Other failures do not get a permission explanation.
     expect(await run(["Bookings.Read.All"], 404)).not.toMatch(/carry/);
+  });
+
+  it("recovers by itself when a token was minted before the permission was granted", async () => {
+    const jwt = (roles: string[]) => `h.${Buffer.from(JSON.stringify({ roles })).toString("base64url")}.s`;
+    let logins = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: RequestInit) => {
+        if (url.includes("login.microsoftonline.com")) {
+          logins += 1;
+          return new Response(JSON.stringify({ access_token: logins === 1 ? jwt([]) : jwt(["Bookings.Read.All"]), expires_in: 3600 }));
+        }
+        const auth = (init?.headers as Record<string, string>).Authorization;
+        return auth.includes(jwt(["Bookings.Read.All"])) ? new Response(JSON.stringify({ value: [{ id: "a" }] })) : new Response("{}", { status: 401 });
+      })
+    );
+    const rows = await fetchBookingAppointments(cfg, "a", "b");
+    expect(rows.map((r) => r.id)).toEqual(["a"]);
+    expect(logins).toBe(2);
+  });
+
+  it("retries a refusal only once, then explains it", async () => {
+    let logins = 0;
+    let graphCalls = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string) => {
+        if (url.includes("login.microsoftonline.com")) {
+          logins += 1;
+          return new Response(JSON.stringify({ access_token: `h.${Buffer.from(JSON.stringify({ roles: [] })).toString("base64url")}.s`, expires_in: 3600 }));
+        }
+        graphCalls += 1;
+        return new Response("{}", { status: 401 });
+      })
+    );
+    const err = (await fetchBookingAppointments(cfg, "a", "b").catch((e: unknown) => e)) as Error;
+    expect(err.message).toMatch(/no application permissions at all/);
+    expect(logins).toBe(2);
+    expect(graphCalls).toBe(2);
   });
 
   it("never follows a paging link to another site", async () => {
