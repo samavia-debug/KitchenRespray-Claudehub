@@ -131,8 +131,9 @@ export default function AppointmentsTab() {
           {result.message && <p style={{ color: result.state === "error" || result.state === "not_configured" || result.state === "busy" ? "#b3261e" : undefined }}>{result.message}</p>}
           {result.counts && (
             <p style={{ margin: "0 0 0.75rem" }}>
+              <strong>In Showroom Appointment:</strong>{" "}
               {result.counts.create + result.counts.update + result.counts.remove === 0
-                ? `Nothing to change: all ${result.counts.unchanged} upcoming appointment${result.counts.unchanged === 1 ? " is" : "s are"} already in Connecteam.`
+                ? `nothing to change (all ${result.counts.unchanged} upcoming appointment${result.counts.unchanged === 1 ? " is" : "s are"} already there)`
                 : `${result.counts.create} to add · ${result.counts.update} to change · ${result.counts.remove} to remove · ${result.counts.unchanged} already there`}
               {result.state === "applied" ? ` · ${result.counts.done} done` : ""}
               {result.skippedAppointments > 0 ? ` · ${result.skippedAppointments} appointment${result.skippedAppointments === 1 ? "" : "s"} skipped because the time could not be read` : ""}
