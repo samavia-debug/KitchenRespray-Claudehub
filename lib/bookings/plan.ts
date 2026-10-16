@@ -32,6 +32,8 @@ export type Plan = {
   update: { link: ShiftLink; desired: DesiredShift }[];
   remove: ShiftLink[];
   unchanged: number;
+  /** The bookings already in Connecteam exactly as they should be, so a preview can show them. */
+  unchangedList: DesiredShift[];
   /** Things held back for safety, in words, for the page and the log. */
   held: string[];
 };
@@ -48,13 +50,16 @@ export function planSync(desired: DesiredShift[], links: ShiftLink[], nowSec: nu
   for (const d of desired) if (d.endSec >= nowSec && d.startSec <= windowEndSec) wanted.set(d.bookingId, d);
 
   const linkById = new Map(links.map((l) => [l.booking_id, l]));
-  const plan: Plan = { create: [], update: [], remove: [], unchanged: 0, held: [] };
+  const plan: Plan = { create: [], update: [], remove: [], unchanged: 0, unchangedList: [], held: [] };
 
   wanted.forEach((d, id) => {
     const link = linkById.get(id);
     if (!link) plan.create.push(d);
     else if (link.signature !== signatureOf(d)) plan.update.push({ link, desired: d });
-    else plan.unchanged += 1;
+    else {
+      plan.unchanged += 1;
+      plan.unchangedList.push(d);
+    }
   });
 
   const futureLinks = links.filter((l) => Date.parse(l.end_at) / 1000 >= nowSec && Date.parse(l.start_at) / 1000 <= windowEndSec);

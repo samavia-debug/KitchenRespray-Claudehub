@@ -222,6 +222,7 @@ export type ConnecteamScheduler = { schedulerId: number; name: string; isArchive
 
 export type ScheduledShift = {
   id: string;
+  title?: string;
   startTime: number;
   endTime: number;
   assignedUserIds?: number[];

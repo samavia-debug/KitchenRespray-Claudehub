@@ -81,6 +81,32 @@ export function serviceLabels(env: NodeJS.ProcessEnv = process.env): Record<stri
 }
 
 /**
+ * Other Connecteam schedules that also get a copy of each appointment, by id or exact name
+ * (for example "12345678" or "Schedule"). Only an appointment with someone assigned is copied
+ * there, never an open shift, because anyone on that schedule could claim an open shift.
+ */
+export function extraSchedulerRefs(env: NodeJS.ProcessEnv = process.env): string[] {
+  return (env.CONNECTEAM_EXTRA_SCHEDULERS ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .slice(0, 3);
+}
+
+export const COPY_TITLE_PREFIX = "Showroom visit";
+
+/**
+ * True for a shift this copy made, whichever schedule it sits in. The rota figures (who is
+ * expected, who was late, scheduled hours) must not count a customer appointment as someone's
+ * working shift, so such shifts are left out of them: matched by the ids recorded when they were
+ * created, and by their title as a second check.
+ */
+export function isBookingCopy(shift: { id?: string; title?: string }, linkedShiftIds: ReadonlySet<string>): boolean {
+  if (shift.id && linkedShiftIds.has(String(shift.id))) return true;
+  return typeof shift.title === "string" && shift.title.trim().startsWith(COPY_TITLE_PREFIX);
+}
+
+/**
  * The scheduler that holds copied appointments. The rota figures (who is
  * expected, who was late, scheduled hours) are read from every other scheduler,
  * so this one is left out of them: a customer appointment is not a technician's

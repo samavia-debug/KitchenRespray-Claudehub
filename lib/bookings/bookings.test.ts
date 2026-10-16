@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { firstNameOf, graphDateToSec, normaliseAppointments, shiftTitle, type RawAppointment } from "./appointments";
-import { appointmentAssignees, appointmentSchedulerIdFromEnv, assigneesFor, bookingsWriteEnabled, graphConfig, hasAssignments, isAppointmentScheduler, serviceAssignees, serviceLabels } from "./config";
+import { appointmentAssignees, appointmentSchedulerIdFromEnv, assigneesFor, bookingsWriteEnabled, extraSchedulerRefs, graphConfig, hasAssignments, isAppointmentScheduler, isBookingCopy, serviceAssignees, serviceLabels } from "./config";
 import { fetchBookingAppointments, resetGraphTokenCache, tokenRoles } from "./graph";
 import { PLAN_LIMITS, planSync, signatureOf, type DesiredShift, type ShiftLink } from "./plan";
 import { createdShiftId, shiftPayload, shiftUpdatePayload } from "../connecteam/shifts-write";
@@ -149,6 +149,15 @@ describe("planSync", () => {
     expect(plan.remove).toEqual([]);
   });
 
+  it("keeps the bookings that need nothing, so a preview can still list them", () => {
+    const a = desired("a", now + day);
+    const b = desired("b", now + 2 * day);
+    const plan = planSync([a, b], [link(a), link(b)], now, end);
+    expect(plan.unchanged).toBe(2);
+    expect(plan.unchangedList.map((d) => d.bookingId)).toEqual(["a", "b"]);
+    expect(planSync([a], [], now, end).unchangedList).toEqual([]);
+  });
+
   it("notices a new title or new assignees", () => {
     const a = desired("a", now + day);
     expect(planSync([{ ...a, title: "Showroom visit – Kylemore – Maria" }], [link(a)], now, end).update).toHaveLength(1);
@@ -248,6 +257,22 @@ describe("settings", () => {
     expect(serviceAssignees({ BOOKINGS_SERVICE_ASSIGNEES: "nonsense" } as any)).toEqual({});
     expect(serviceAssignees({ BOOKINGS_SERVICE_ASSIGNEES: "[1,2]" } as any)).toEqual({});
     expect(serviceAssignees({} as any)).toEqual({});
+  });
+
+  it("reads the extra schedules, by id or name", () => {
+    expect(extraSchedulerRefs({ CONNECTEAM_EXTRA_SCHEDULERS: " Schedule , 12345678,, " } as any)).toEqual(["Schedule", "12345678"]);
+    expect(extraSchedulerRefs({} as any)).toEqual([]);
+    expect(extraSchedulerRefs({ CONNECTEAM_EXTRA_SCHEDULERS: "a,b,c,d,e" } as any)).toHaveLength(3);
+  });
+
+  it("recognises a shift the copy made, by the ids it recorded or by its title", () => {
+    const ids = new Set(["s1"]);
+    expect(isBookingCopy({ id: "s1", title: "Anything" }, ids)).toBe(true);
+    expect(isBookingCopy({ id: "x", title: "Showroom visit – Bray – Mary" }, new Set())).toBe(true);
+    expect(isBookingCopy({ id: "x", title: "  Showroom visit – Kylemore" }, new Set())).toBe(true);
+    expect(isBookingCopy({ id: "x", title: "Workshop > Work on doors" }, ids)).toBe(false);
+    expect(isBookingCopy({ id: "x" }, ids)).toBe(false);
+    expect(isBookingCopy({ id: "x", title: "Kylemore/ Collection > Showroom visit later" }, ids)).toBe(false);
   });
 
   it("recognises the appointment scheduler by name or by id, and no other", () => {

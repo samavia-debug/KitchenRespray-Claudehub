@@ -11,7 +11,7 @@ const ACTION: Record<string, { label: string; color?: string }> = {
   create: { label: "Add to Connecteam" },
   update: { label: "Change in Connecteam", color: "#b98900" },
   remove: { label: "Remove from Connecteam", color: "#b3261e" },
-  unchanged: { label: "Already there" },
+  unchanged: { label: "Already in Connecteam", color: "var(--muted)" },
 };
 
 function Check({ ok, children, hint }: { ok: boolean; children: React.ReactNode; hint?: string }) {
@@ -98,6 +98,12 @@ export default function AppointmentsTab() {
               Appointments appear as <strong>{status.assignedTo === "people" ? "shifts assigned to the chosen people" : "open (unassigned) shifts"}</strong>. {status.linked} copied so far
               {status.lastRunAt ? `, last run ${ago(status.lastRunAt)}` : ", not run yet"}.
             </p>
+            {status.alsoCopiesTo.length > 0 && (
+              <p style={{ margin: "0.3rem 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>
+                Also copied into: {status.alsoCopiesTo.join(", ")}. Only appointments with a person assigned go there, never open shifts, and they are left out of the lateness, hours and
+                rota figures.
+              </p>
+            )}
             {last && (
               <p style={{ margin: "0.3rem 0 0", fontSize: "0.82rem", color: last.errors?.length ? "#b3261e" : "var(--muted)" }}>
                 Last run: {last.state}
@@ -125,11 +131,23 @@ export default function AppointmentsTab() {
           {result.message && <p style={{ color: result.state === "error" || result.state === "not_configured" || result.state === "busy" ? "#b3261e" : undefined }}>{result.message}</p>}
           {result.counts && (
             <p style={{ margin: "0 0 0.75rem" }}>
-              {result.counts.create} to add · {result.counts.update} to change · {result.counts.remove} to remove · {result.counts.unchanged} already there
+              {result.counts.create + result.counts.update + result.counts.remove === 0
+                ? `Nothing to change: all ${result.counts.unchanged} upcoming appointment${result.counts.unchanged === 1 ? " is" : "s are"} already in Connecteam.`
+                : `${result.counts.create} to add · ${result.counts.update} to change · ${result.counts.remove} to remove · ${result.counts.unchanged} already there`}
               {result.state === "applied" ? ` · ${result.counts.done} done` : ""}
               {result.skippedAppointments > 0 ? ` · ${result.skippedAppointments} appointment${result.skippedAppointments === 1 ? "" : "s"} skipped because the time could not be read` : ""}
             </p>
           )}
+          {result.extras?.map((x) => (
+            <p key={x.schedulerId} style={{ margin: "0 0 0.75rem", fontSize: "0.9rem" }}>
+              <strong>Also in {x.name}:</strong>{" "}
+              {x.counts.create + x.counts.update + x.counts.remove === 0
+                ? `nothing to change (${x.counts.unchanged} already there)`
+                : `${x.counts.create} to add · ${x.counts.update} to change · ${x.counts.remove} to remove · ${x.counts.unchanged} already there`}
+              {result.state === "applied" ? ` · ${x.counts.done} done` : ""}
+              {x.skippedOpen > 0 ? ` · ${x.skippedOpen} not copied there because nobody is assigned` : ""}
+            </p>
+          ))}
           {result.held.map((h) => (
             <p key={h} style={{ color: "#b98900", fontSize: "0.9rem" }}>
               {h}
@@ -149,6 +167,7 @@ export default function AppointmentsTab() {
                     <th>Showroom</th>
                     <th>When (Irish time)</th>
                     <th>First name</th>
+                    <th>Assigned to</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -158,38 +177,18 @@ export default function AppointmentsTab() {
                       <td>{it.service || "—"}</td>
                       <td>{when(it.startSec)}</td>
                       <td>{it.firstName ?? "—"}</td>
+                      <td>{it.assignedTo || "—"}</td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
           )}
-          {result.items && result.items.length === 0 && result.counts && <p style={{ color: "var(--muted)", margin: 0 }}>Nothing to do: Connecteam already matches Bookings.</p>}
+          {result.items && result.items.length === 0 && result.counts && (
+            <p style={{ color: "var(--muted)", margin: 0 }}>No upcoming appointments were found in Microsoft Bookings, so there is nothing to copy.</p>
+          )}
         </div>
       )}
-
-      <div className="card">
-        <h2 style={{ marginTop: 0 }}>What it needs</h2>
-        <p style={{ margin: "0 0 0.5rem", fontSize: "0.9rem", color: "var(--muted)" }}>
-          These are set in Netlify (Site configuration → Environment variables), then redeploy. Nothing happens until the Microsoft ones exist.
-        </p>
-        <ul style={{ margin: 0, paddingLeft: "1.1rem", fontSize: "0.88rem" }}>
-          <li>
-            <code>MS_GRAPH_TENANT_ID</code>, <code>MS_GRAPH_CLIENT_ID</code>, <code>MS_GRAPH_CLIENT_SECRET</code>: from the small read-only app your Microsoft 365 admin registers
-          </li>
-          <li>
-            <code>MS_BOOKINGS_BUSINESS_ID</code>: the Bookings calendar (for example the website booking mailbox address)
-          </li>
-          <li>
-            <code>BOOKINGS_TO_CONNECTEAM_ENABLED=true</code>: the separate switch that allows writing into Connecteam
-          </li>
-          <li>
-            Optional: <code>BOOKINGS_SERVICE_ASSIGNEES</code> (who each showroom&apos;s appointments belong to, for example{" "}
-            <code>{`{"Kylemore":123,"Bray":456}`}</code>), <code>CONNECTEAM_APPOINTMENT_USER_IDS</code> (everyone else; otherwise open shifts),{" "}
-            <code>CONNECTEAM_APPOINTMENT_SCHEDULER_ID</code>, and <code>BOOKINGS_SERVICE_LABELS</code> to rename a service in the shift title
-          </li>
-        </ul>
-      </div>
     </>
   );
 }

@@ -1,6 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import { fetchAllRows } from "@/lib/supabase/paginate";
-import { isAppointmentScheduler } from "@/lib/bookings/config";
+import { isAppointmentScheduler, isBookingCopy } from "@/lib/bookings/config";
 import {
   fetchJobs,
   fetchScheduledShifts,
@@ -213,6 +213,18 @@ export async function getTimeOffContextForEleven(): Promise<string> {
 
 // ---- Rota (scheduled shifts) ----
 
+/** Ids of the Connecteam shifts the Bookings copy created. Empty if that feature has never been set up. */
+async function bookingCopyShiftIds(): Promise<Set<string>> {
+  try {
+    const rows = await fetchAllRows<{ shift_id: string; booking_id: string }>((from, to) =>
+      createServiceClient().from("booking_shift_links").select("shift_id, booking_id").order("booking_id").order("shift_id").range(from, to)
+    );
+    return new Set(rows.map((r) => String(r.shift_id)));
+  } catch {
+    return new Set();
+  }
+}
+
 export type ScheduleSyncResult = { shifts: number; removed: number; backfilled: boolean };
 
 /**
@@ -230,8 +242,10 @@ export async function syncSchedule(): Promise<ScheduleSyncResult> {
   // The Showroom Appointment scheduler holds customer appointments, not working shifts, so it is not part of the rota figures.
   const schedulers = (await fetchSchedulers()).filter((s) => !s.isArchived && !isAppointmentScheduler(s));
   const byId = new Map<string, ScheduledShiftRow>();
+  // Appointments copied into other schedules (such as the main one) are not working shifts either.
+  const copied = await bookingCopyShiftIds();
   for (const scheduler of schedulers) {
-    const shifts = await fetchScheduledShifts(scheduler.schedulerId, startSec, endSec);
+    const shifts = (await fetchScheduledShifts(scheduler.schedulerId, startSec, endSec)).filter((s) => !isBookingCopy(s, copied));
     for (const row of parseScheduledShifts(scheduler.schedulerId, shifts)) byId.set(row.shift_id, row);
   }
 

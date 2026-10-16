@@ -2,27 +2,29 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---- A small in-memory stand-in for the database ----
 type Row = Record<string, any>;
-const db: { links: Row[]; state: Row; failInsert: boolean } = { links: [], state: {}, failInsert: false };
+const db: { links: Row[]; state: Row; failInsert: boolean; failInsertFor: number | null; staff: Row[] } = { links: [], state: {}, failInsert: false, failInsertFor: null, staff: [] };
 
 function exec(q: any): { data?: any; error: { message: string } | null; count?: number } {
+  const matches = (row: Row) => q.filters.every((f: any[]) => row[f[0]] === f[1]);
   if (q.table === "booking_shift_links") {
     if (q.op === "select") return q.head ? { error: null, count: db.links.length } : { data: db.links.map((r) => ({ ...r })), error: null };
     if (q.op === "insert") {
-      if (db.failInsert) return { error: { message: "insert refused" } };
+      if (db.failInsert || (db.failInsertFor !== null && q.payload.scheduler_id === db.failInsertFor)) return { error: { message: "insert refused" } };
+      // The key is the booking AND the schedule it was copied into.
+      if (db.links.some((r) => r.booking_id === q.payload.booking_id && r.scheduler_id === q.payload.scheduler_id)) return { error: { message: "duplicate key" } };
       db.links.push({ ...q.payload });
       return { error: null };
     }
-    const id = q.filters.find((f: any[]) => f[0] === "booking_id")?.[1];
     if (q.op === "update") {
-      const row = db.links.find((r) => r.booking_id === id);
-      if (row) Object.assign(row, q.payload);
+      db.links.filter(matches).forEach((row) => Object.assign(row, q.payload));
       return { error: null };
     }
     if (q.op === "delete") {
-      db.links = db.links.filter((r) => r.booking_id !== id);
+      db.links = db.links.filter((r) => !matches(r));
       return { error: null };
     }
   }
+  if (q.table === "knowledge_entries") return { data: db.staff.map((r) => ({ ...r })), error: null };
   if (q.table === "booking_sync_state") {
     if (q.op === "update" && q.orStr) {
       const running = db.state.running_since ? Date.parse(db.state.running_since) : 0;
@@ -145,6 +147,7 @@ function setEnv(over: Record<string, string | undefined> = {}) {
   for (const k of Object.keys(ENV)) delete process.env[k];
   delete process.env.CONNECTEAM_APPOINTMENT_USER_IDS;
   delete process.env.BOOKINGS_SERVICE_ASSIGNEES;
+  delete process.env.CONNECTEAM_EXTRA_SCHEDULERS;
   delete process.env.CONNECTEAM_APPOINTMENT_SCHEDULER_ID;
   delete process.env.BOOKINGS_SERVICE_LABELS;
   for (const [k, v] of Object.entries({ ...ENV, ...over })) if (v !== undefined) process.env[k] = v;
@@ -154,6 +157,8 @@ beforeEach(() => {
   db.links = [];
   db.state = { id: 1, running_since: null, last_run_at: null, last_result: null };
   db.failInsert = false;
+  db.failInsertFor = null;
+  db.staff = [];
   world.appts = [];
   world.schedulers = [{ schedulerId: 55, name: "Showroom Appointment" }, { schedulerId: 1, name: "Schedule" }];
   world.calls = [];
@@ -248,6 +253,32 @@ describe("copying bookings", () => {
     const r = await runBookingsSync({ apply: true });
     expect(r.counts).toMatchObject({ create: 0, update: 1 });
     expect(puts()[0].body[0]).toMatchObject({ id: "shift-1", assignedUserIds: [111], isOpenShift: false });
+  });
+
+  it("always lists every upcoming booking in a preview, even when nothing needs changing", async () => {
+    setEnv({ BOOKINGS_SERVICE_ASSIGNEES: '{"Kylemore":111}' });
+    db.staff = [{ title: "S Erin Kennedy", status: "verified", external_id: "111" }];
+    world.appts = [appt("a", 3, "Sarah Byrne", "Kylemore"), appt("b", 2, "Olivia Doyle", "Sandyford")];
+    await runBookingsSync({ apply: true });
+
+    world.calls = [];
+    const r = await runBookingsSync({ apply: false });
+    expect(r.counts).toMatchObject({ create: 0, update: 0, remove: 0, unchanged: 2 });
+    expect(r.items).toHaveLength(2);
+    // Earliest first, each with its showroom, first name and who it belongs to.
+    expect(r.items?.map((i) => [i.action, i.service, i.firstName, i.assignedTo])).toEqual([
+      ["unchanged", "Sandyford", "Olivia", "Open shift"],
+      ["unchanged", "Kylemore", "Sarah", "Erin Kennedy"],
+    ]);
+    expect(posts()).toHaveLength(0);
+    expect(puts()).toHaveLength(0);
+  });
+
+  it("falls back to the person's id when the staff list cannot name them", async () => {
+    setEnv({ BOOKINGS_SERVICE_ASSIGNEES: '{"Kylemore":111}' });
+    world.appts = [appt("a", 2, "Sarah Byrne", "Kylemore")];
+    const r = await runBookingsSync({ apply: false });
+    expect(r.items?.[0].assignedTo).toBe("Connecteam user 111");
   });
 
   it("copies nothing twice", async () => {
@@ -374,5 +405,110 @@ describe("when something goes wrong", () => {
     const r = await runBookingsSync({ apply: false });
     expect(r.skippedAppointments).toBe(1);
     expect(r.counts?.create).toBe(0);
+  });
+});
+const SCHED_RE = /schedulers\/(\d+)\//;
+
+describe("copying into the main Schedule as well", () => {
+  const toSchedule = () => posts().filter((p) => p.url.includes("/schedulers/1/"));
+  const toShowroom = () => posts().filter((p) => p.url.includes("/schedulers/55/"));
+  const assign = { BOOKINGS_SERVICE_ASSIGNEES: '{"Kylemore":111}', CONNECTEAM_EXTRA_SCHEDULERS: "Schedule" };
+
+  async function twoBookings() {
+    setEnv(assign);
+    world.appts = [appt("k", 2, "Sarah Byrne", "Kylemore"), appt("s", 3, "Olivia Doyle", "Sandyford")];
+    return runBookingsSync({ apply: true });
+  }
+
+  it("copies an assigned appointment into both schedules, but never an open one into the main one", async () => {
+    const r = await twoBookings();
+    expect(r.errors).toEqual([]);
+    expect(toShowroom()).toHaveLength(2); // Showroom Appointment takes everything
+    expect(toSchedule()).toHaveLength(1); // the main Schedule only the assigned one
+    expect(toSchedule()[0].body[0]).toMatchObject({ assignedUserIds: [111] });
+    expect(toSchedule()[0].body[0]).not.toHaveProperty("isOpenShift"); // nobody on the main schedule can claim it
+    expect(db.links.map((l) => [l.booking_id, l.scheduler_id]).sort()).toEqual([["k", 1], ["k", 55], ["s", 55]]);
+    expect(r.extras).toEqual([{ schedulerId: 1, name: "Schedule", counts: { create: 1, update: 0, remove: 0, unchanged: 0, done: 1 }, skippedOpen: 1 }]);
+    expect(r.counts).toMatchObject({ create: 2, done: 2 });
+  });
+
+  it("copies nothing twice into either", async () => {
+    await twoBookings();
+    world.calls = [];
+    const r = await runBookingsSync({ apply: true });
+    expect(posts()).toHaveLength(0);
+    expect(puts()).toHaveLength(0);
+    expect(deletes()).toHaveLength(0);
+    expect(r.counts).toMatchObject({ create: 0, unchanged: 2 });
+    expect(r.extras?.[0].counts).toMatchObject({ create: 0, unchanged: 1 });
+  });
+
+  it("removes a cancelled booking from both schedules", async () => {
+    await twoBookings();
+    world.appts = [appt("s", 3, "Olivia Doyle", "Sandyford")];
+    world.calls = [];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.errors).toEqual([]);
+    expect(deletes().map((d) => d.url.match(SCHED_RE)?.[1]).sort()).toEqual(["1", "55"]);
+    expect(db.links.map((l) => l.booking_id)).toEqual(["s"]);
+  });
+
+  it("adds an appointment to the main schedule once someone is assigned to it", async () => {
+    setEnv({ CONNECTEAM_EXTRA_SCHEDULERS: "Schedule" });
+    world.appts = [appt("k", 2, "Sarah Byrne", "Kylemore")];
+    await runBookingsSync({ apply: true }); // open shift: only in the showroom schedule
+    expect(toSchedule()).toHaveLength(0);
+
+    setEnv({ ...assign });
+    world.calls = [];
+    const r = await runBookingsSync({ apply: true });
+    expect(toSchedule()).toHaveLength(1);
+    expect(puts()).toHaveLength(1); // the showroom copy moves from open to assigned
+    expect(r.extras?.[0].counts).toMatchObject({ create: 1, done: 1 });
+  });
+
+  it("finds an extra schedule by its id too", async () => {
+    setEnv({ BOOKINGS_SERVICE_ASSIGNEES: '{"Kylemore":111}', CONNECTEAM_EXTRA_SCHEDULERS: "1" });
+    world.appts = [appt("k", 2, "Sarah Byrne", "Kylemore")];
+    await runBookingsSync({ apply: true });
+    expect(toSchedule()).toHaveLength(1);
+  });
+
+  it("stops before writing anything when an extra schedule cannot be found", async () => {
+    setEnv({ CONNECTEAM_EXTRA_SCHEDULERS: "No Such Schedule" });
+    world.appts = [appt("k", 2)];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.state).toBe("error");
+    expect(r.message).toMatch(/CONNECTEAM_EXTRA_SCHEDULERS names "No Such Schedule"/);
+    expect(posts()).toHaveLength(0);
+    expect(db.links).toEqual([]);
+  });
+
+  it("only previews, with the extra schedule's counts, when asked to preview", async () => {
+    setEnv(assign);
+    world.appts = [appt("k", 2, "Sarah Byrne", "Kylemore"), appt("s", 3, "Olivia Doyle", "Sandyford")];
+    const r = await runBookingsSync({ apply: false });
+    expect(r.state).toBe("preview");
+    expect(r.counts).toMatchObject({ create: 2 });
+    expect(r.extras?.[0]).toMatchObject({ name: "Schedule", counts: { create: 1 }, skippedOpen: 1 });
+    expect(posts()).toHaveLength(0);
+  });
+
+  it("takes back only the copy it cannot record, and keeps the other schedule's good one", async () => {
+    setEnv(assign);
+    db.failInsertFor = 1;
+    world.appts = [appt("k", 2, "Sarah Byrne", "Kylemore")];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.errors[0]).toMatch(/^Schedule: Create failed: could not record the link/);
+    expect(deletes()).toHaveLength(1);
+    expect(deletes()[0].url).toContain("/schedulers/1/");
+    expect(db.links.map((l) => l.scheduler_id)).toEqual([55]);
+  });
+
+  it("counts a booking once in the preview even though it sits in two schedules", async () => {
+    await twoBookings();
+    const r = await runBookingsSync({ apply: false });
+    expect(r.counts?.unchanged).toBe(2);
+    expect(r.items).toHaveLength(2);
   });
 });
