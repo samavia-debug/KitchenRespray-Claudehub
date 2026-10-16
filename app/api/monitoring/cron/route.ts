@@ -42,6 +42,8 @@ const LIVE_STALE_HOURS = 0.4;
 // The very first time-clock sync reads over a year of history, so give it more room.
 const MIN_TIME_BUDGET_MS = 25_000;
 const MIN_CONNECTEAM_BUDGET_MS = 10_000;
+// The appointment copy is light, so it only needs a little room.
+const MIN_BOOKINGS_BUDGET_MS = 8_000;
 
 function isAuthorized(request: NextRequest): boolean {
   const secret = process.env.CRON_SECRET;
@@ -177,6 +179,25 @@ async function runCron(request: NextRequest) {
     }
   }
 
+  // Website appointments into the Showroom Appointment calendar. Dormant until the Microsoft
+  // credentials are set AND writing has been switched on, so it does nothing by default.
+  // It runs BEFORE the heavier Connecteam syncs: it is quick (one Microsoft read and a few
+  // Connecteam calls), and when it sat at the end the clock and rota syncs used up the time
+  // budget first, so new bookings were skipped tick after tick.
+  let bookingsSync: { state?: string; counts?: unknown; errors?: number; held?: number; error?: string; skipped?: string } = { skipped: "not switched on" };
+  if (graphConfig() && bookingsWriteEnabled() && isConnecteamConfigured()) {
+    if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_BOOKINGS_BUDGET_MS) {
+      bookingsSync = { skipped: "out of time budget" };
+    } else {
+      try {
+        const r = await runBookingsSync({ apply: true });
+        bookingsSync = { state: r.state, counts: r.counts, errors: r.errors.length, held: r.held.length, ...(r.state === "error" ? { error: r.message } : {}) };
+      } catch (err: any) {
+        bookingsSync = { error: err.message };
+      }
+    }
+  }
+
   // Staff data changes rarely, so Connecteam is re-synced about daily. Its
   // own try/catch keeps a Connecteam problem (expired key, API outage) from
   // ever affecting the health checks or Google sync above.
@@ -291,22 +312,6 @@ async function runCron(request: NextRequest) {
       }
     } catch (err: any) {
       timeOffSync = { error: err.message };
-    }
-  }
-
-  // Website appointments into the Showroom Appointment calendar. Dormant until the Microsoft
-  // credentials are set AND writing has been switched on, so it does nothing by default.
-  let bookingsSync: { state?: string; counts?: unknown; errors?: number; held?: number; error?: string; skipped?: string } = { skipped: "not switched on" };
-  if (graphConfig() && bookingsWriteEnabled() && isConnecteamConfigured()) {
-    if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_TIME_BUDGET_MS) {
-      bookingsSync = { skipped: "out of time budget" };
-    } else {
-      try {
-        const r = await runBookingsSync({ apply: true });
-        bookingsSync = { state: r.state, counts: r.counts, errors: r.errors.length, held: r.held.length, ...(r.state === "error" ? { error: r.message } : {}) };
-      } catch (err: any) {
-        bookingsSync = { error: err.message };
-      }
     }
   }
 
