@@ -170,6 +170,7 @@ export default function AppointmentsTab() {
                     <th>When (Irish time)</th>
                     <th>First name</th>
                     <th>Assigned to</th>
+                    <th>Customer details</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -180,6 +181,17 @@ export default function AppointmentsTab() {
                       <td>{when(it.startSec)}</td>
                       <td>{it.firstName ?? "—"}</td>
                       <td>{it.assignedTo || "—"}</td>
+                      <td style={{ maxWidth: 320, overflowWrap: "anywhere" }}>
+                        {it.details && (it.details.name || it.details.phone || it.details.note) ? (
+                          <>
+                            {it.details.name && <div style={{ fontWeight: 600 }}>{it.details.name}</div>}
+                            {it.details.phone && <div>{it.details.phone}</div>}
+                            {it.details.note && <div style={{ fontSize: "0.8rem", color: "var(--muted)", whiteSpace: "pre-line" }}>{it.details.note}</div>}
+                          </>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

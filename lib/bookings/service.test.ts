@@ -553,8 +553,11 @@ describe("customer details in the shifts", () => {
     // Nothing about the customer is kept in the link records: only a fingerprint.
     expect(JSON.stringify(db.links)).not.toMatch(/087 123|Byrne|Oak doors/);
     expect(JSON.stringify(db.state)).not.toMatch(/087 123|Byrne|Oak doors/);
-    // And the result sent back to the page does not carry the phone number either.
-    expect(JSON.stringify(r)).not.toMatch(/087 123|Oak doors/);
+    // The only place the details appear in a result is the page's own item list; the rest of it (what is logged
+    // and stored, and what the scheduled ticks send back) carries none.
+    const { items, ...summary } = r;
+    expect(items?.[0].details?.phone).toBe("087 123 4567");
+    expect(JSON.stringify(summary)).not.toMatch(/087 123|Byrne|Oak doors/);
   });
 
   it("updates the shifts when the customer changes their note, and not otherwise", async () => {
@@ -588,6 +591,21 @@ describe("customer details in the shifts", () => {
     world.calls = [];
     expect((await runBookingsSync({ apply: true })).counts).toMatchObject({ update: 0, unchanged: 1 });
     expect(puts()).toHaveLength(0);
+  });
+
+  it("shows the details to the Admin page in a preview, but never stores or schedules them", async () => {
+    setEnv({ BOOKINGS_SERVICE_ASSIGNEES: '{"Kylemore":111}' });
+    world.appts = [appt("k", 2, "Sarah Byrne", "Kylemore", "087 123 4567", "Oak doors")];
+    await runBookingsSync({ apply: true });
+
+    const r = await runBookingsSync({ apply: false });
+    expect(r.items?.[0].details).toEqual({ name: "Sarah Byrne", phone: "087 123 4567", note: "Oak doors" });
+    // What is kept for the next run is the summary only, without the list or any customer details.
+    expect(JSON.stringify(db.state)).not.toMatch(/087 123|Byrne|Oak doors|items/);
+    // A removal has no details to show.
+    world.appts = [];
+    const gone = await runBookingsSync({ apply: false });
+    expect(gone.items?.every((i) => i.details === null || i.action !== "remove")).toBe(true);
   });
 
   it("makes no notes when Bookings has no details", async () => {

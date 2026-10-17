@@ -2,7 +2,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { fetchSchedulers, isConnecteamConfigured, type ConnecteamScheduler } from "@/lib/connecteam/client";
 import { createShift, deleteShift, updateShift } from "@/lib/connecteam/shifts-write";
 import { normaliseAppointments, shiftTitle } from "./appointments";
-import { notesHtml } from "./details";
+import { notesHtml, type CustomerDetails } from "./details";
 import {
   APPOINTMENT_SCHEDULER_NAME,
   appointmentSchedulerIdFromEnv,
@@ -28,6 +28,11 @@ export type RunItem = {
   firstName: string | null;
   /** Who the shift is (or will be) assigned to, or "Open shift". */
   assignedTo: string;
+  /**
+   * The customer's name, phone and note, for the Admin-only Appointments page. This travels only in the
+   * response to that page's own request: it is never stored, never logged, and never sent by the scheduled ticks.
+   */
+  details: CustomerDetails | null;
 };
 
 export type Counts = { create: number; update: number; remove: number; unchanged: number; done: number };
@@ -284,6 +289,7 @@ export async function runBookingsSync({ apply }: { apply: boolean }): Promise<Ru
       notes: notesHtml(a.details),
     }));
     const firstNames = new Map(appointments.map((a) => [a.id, a.firstName]));
+    const detailsById = new Map(appointments.map((a) => [a.id, a.details]));
 
     const allLinks = await loadLinks();
     const linksFor = (id: number) => allLinks.filter((l) => l.scheduler_id === id);
@@ -312,6 +318,7 @@ export async function runBookingsSync({ apply }: { apply: boolean }): Promise<Ru
       startSec: d.startSec,
       firstName: firstNames.get(d.bookingId) ?? null,
       assignedTo: who(d.assignees),
+      details: detailsById.get(d.bookingId) ?? null,
     });
 
     // Everything upcoming, in time order, whether or not it needs a change, so a preview always shows something.
@@ -319,7 +326,7 @@ export async function runBookingsSync({ apply }: { apply: boolean }): Promise<Ru
       ...primaryPlan.create.map((d) => item("create", d)),
       ...primaryPlan.update.map(({ desired: d }) => item("update", d)),
       ...primaryPlan.unchangedList.map((d) => item("unchanged", d)),
-      ...primaryPlan.remove.map((l) => ({ action: "remove" as const, service: l.service ?? "", startSec: Math.floor(Date.parse(l.start_at) / 1000), firstName: null, assignedTo: "" })),
+      ...primaryPlan.remove.map((l) => ({ action: "remove" as const, service: l.service ?? "", startSec: Math.floor(Date.parse(l.start_at) / 1000), firstName: null, assignedTo: "", details: null })),
     ].sort((a, b) => a.startSec - b.startSec);
     out.counts = countsOf(primaryPlan);
     out.extras = extraPlans.map((e) => ({ schedulerId: e.target.id, name: e.target.name, counts: countsOf(e.plan), skippedOpen: e.skippedOpen }));
