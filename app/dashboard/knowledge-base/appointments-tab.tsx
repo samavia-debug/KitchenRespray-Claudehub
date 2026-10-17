@@ -75,8 +75,9 @@ export default function AppointmentsTab() {
         <h2 style={{ marginTop: 0 }}>Website appointments in Connecteam</h2>
         <p style={{ color: "var(--muted)", margin: "0 0 1rem", fontSize: "0.9rem" }}>
           Appointments booked on the website (Microsoft Bookings) can be copied into the <strong>Showroom Appointment</strong> calendar in Connecteam, so the team sees them
-          there. It checks for new, changed and cancelled bookings every 30 minutes once it is switched on. Only the showroom, the time and the customer&apos;s first name are
-          copied. That calendar is left out of the lateness, hours and rota figures.
+          there. It checks for new, changed and cancelled bookings every 30 minutes once it is switched on. The showroom, the time and the customer&apos;s first name go in the
+          shift title; the customer&apos;s name, phone number and any note they left go inside the shift&apos;s notes. These shifts are left out of the lateness, hours and rota
+          figures.
         </p>
 
         {tableMissing && <p className="error-text">The tables for this are not set up yet. Run the booking_shift_links migration in Supabase, then reload.</p>}

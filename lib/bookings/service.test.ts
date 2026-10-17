@@ -104,9 +104,9 @@ const stamp = (daysAhead: number, hour = 10) => {
   return d;
 };
 const gdt = (d: Date) => ({ dateTime: d.toISOString().slice(0, 19) + ".0000000", timeZone: "UTC" });
-const appt = (id: string, daysAhead: number, name = "Mary O'Brien", service = "Kylemore"): Appt => {
+const appt = (id: string, daysAhead: number, name = "Mary O'Brien", service = "Kylemore", phone?: string, note?: string): Appt => {
   const start = stamp(daysAhead);
-  return { id, serviceName: service, start: gdt(start), end: gdt(new Date(start.getTime() + 1_800_000)), customers: [{ name }] };
+  return { id, serviceName: service, start: gdt(start), end: gdt(new Date(start.getTime() + 1_800_000)), customers: [{ name, phone, notes: note }] };
 };
 
 function installFetch() {
@@ -510,5 +510,70 @@ describe("copying into the main Schedule as well", () => {
     const r = await runBookingsSync({ apply: false });
     expect(r.counts?.unchanged).toBe(2);
     expect(r.items).toHaveLength(2);
+  });
+});
+
+describe("customer details in the shifts", () => {
+  const bodyOf = (call: { body?: any }) => call.body[0];
+
+  it("puts the name, phone and note in the notes of every copy, and none of it in our own records", async () => {
+    setEnv({ BOOKINGS_SERVICE_ASSIGNEES: '{"Kylemore":111}', CONNECTEAM_EXTRA_SCHEDULERS: "Schedule" });
+    world.appts = [appt("k", 2, "Sarah Byrne", "Kylemore", "087 123 4567", "Oak doors <12>")];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.errors).toEqual([]);
+    expect(posts()).toHaveLength(2); // Showroom Appointment and the main Schedule
+    for (const p of posts()) {
+      const b = bodyOf(p);
+      expect(b.title).toBe("Showroom visit – Kylemore – Sarah"); // the title still carries only the first name
+      expect(b.notes).toHaveLength(1);
+      expect(b.notes[0].type).toBe("html");
+      expect(b.notes[0].html).toContain("<strong>Customer:</strong> Sarah Byrne");
+      expect(b.notes[0].html).toContain("<strong>Phone:</strong> 087 123 4567");
+      expect(b.notes[0].html).toContain("Oak doors &lt;12&gt;");
+    }
+    // Nothing about the customer is kept in the link records: only a fingerprint.
+    expect(JSON.stringify(db.links)).not.toMatch(/087 123|Byrne|Oak doors/);
+    expect(JSON.stringify(db.state)).not.toMatch(/087 123|Byrne|Oak doors/);
+    // And the result sent back to the page does not carry the phone number either.
+    expect(JSON.stringify(r)).not.toMatch(/087 123|Oak doors/);
+  });
+
+  it("updates the shifts when the customer changes their note, and not otherwise", async () => {
+    setEnv({ BOOKINGS_SERVICE_ASSIGNEES: '{"Kylemore":111}', CONNECTEAM_EXTRA_SCHEDULERS: "Schedule" });
+    world.appts = [appt("k", 2, "Sarah Byrne", "Kylemore", "087 123 4567", "First note")];
+    await runBookingsSync({ apply: true });
+
+    world.calls = [];
+    expect((await runBookingsSync({ apply: true })).counts).toMatchObject({ update: 0, unchanged: 1 });
+    expect(puts()).toHaveLength(0);
+
+    world.appts = [appt("k", 2, "Sarah Byrne", "Kylemore", "087 123 4567", "Second note")];
+    world.calls = [];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.counts).toMatchObject({ update: 1 });
+    expect(puts()).toHaveLength(2);
+    for (const p of puts()) expect(bodyOf(p).notes[0].html).toContain("Second note");
+  });
+
+  it("brings shifts copied before this existed up to date once, adding the details", async () => {
+    world.appts = [appt("k", 2, "Sarah Byrne", "Kylemore", "087 123 4567", "Hello")];
+    await runBookingsSync({ apply: true });
+    // As the record looked before notes were part of it: the same signature without the trailing notes field.
+    db.links.forEach((l) => (l.signature = l.signature.replace(/\|[0-9a-f]{12}$/, "|")));
+
+    world.calls = [];
+    const r = await runBookingsSync({ apply: true });
+    expect(r.counts).toMatchObject({ update: 1, unchanged: 0 });
+    expect(bodyOf(puts()[0]).notes[0].html).toContain("087 123 4567");
+
+    world.calls = [];
+    expect((await runBookingsSync({ apply: true })).counts).toMatchObject({ update: 0, unchanged: 1 });
+    expect(puts()).toHaveLength(0);
+  });
+
+  it("makes no notes when Bookings has no details", async () => {
+    world.appts = [{ id: "x", serviceName: "Bray", start: gdt(stamp(2)), end: gdt(new Date(stamp(2).getTime() + 1_800_000)) }];
+    await runBookingsSync({ apply: true });
+    expect(bodyOf(posts()[0])).not.toHaveProperty("notes");
   });
 });

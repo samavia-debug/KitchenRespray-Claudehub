@@ -2,6 +2,7 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { fetchSchedulers, isConnecteamConfigured, type ConnecteamScheduler } from "@/lib/connecteam/client";
 import { createShift, deleteShift, updateShift } from "@/lib/connecteam/shifts-write";
 import { normaliseAppointments, shiftTitle } from "./appointments";
+import { notesHtml } from "./details";
 import {
   APPOINTMENT_SCHEDULER_NAME,
   appointmentSchedulerIdFromEnv,
@@ -155,7 +156,7 @@ const isGone = (e: unknown) => e instanceof Error && /HTTP 404/.test(e.message);
 /** Carries out one schedule's plan. Returns how many changes succeeded; failures are added to `errors`. */
 async function applyPlan(target: Target, plan: Plan, label: string, errors: string[]): Promise<number> {
   const supabase = createServiceClient();
-  const shiftOf = (d: DesiredShift) => ({ startSec: d.startSec, endSec: d.endSec, title: d.title, assignees: d.assignees });
+  const shiftOf = (d: DesiredShift) => ({ startSec: d.startSec, endSec: d.endSec, title: d.title, assignees: d.assignees, notesHtml: d.notes });
   const say = (what: string, e: any) => errors.push(`${label}${what} failed: ${e.message}`);
   let done = 0;
 
@@ -268,6 +269,7 @@ export async function runBookingsSync({ apply }: { apply: boolean }): Promise<Ru
       title: shiftTitle(a, labels),
       // Each showroom can belong to a different person.
       assignees: assigneesFor(a.service),
+      notes: notesHtml(a.details),
     }));
     const firstNames = new Map(appointments.map((a) => [a.id, a.firstName]));
 

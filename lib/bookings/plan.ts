@@ -1,3 +1,5 @@
+import { createHash } from "crypto";
+
 export type DesiredShift = {
   bookingId: string;
   service: string;
@@ -5,6 +7,8 @@ export type DesiredShift = {
   endSec: number;
   title: string;
   assignees: number[];
+  /** The shift's notes (customer name, phone, note) as HTML. Not stored by us: only a short fingerprint is. */
+  notes?: string;
 };
 
 export type ShiftLink = {
@@ -22,9 +26,13 @@ export type ShiftLink = {
 // mistake, or deleting most of the calendar because Microsoft returned nothing.
 export const PLAN_LIMITS = { maxCreates: 60, maxRemovals: 5, emptyReadGuard: 3 } as const;
 
-/** What was written for a booking, so a change in time, title or assignees is noticed. */
-export function signatureOf(d: Pick<DesiredShift, "startSec" | "endSec" | "title" | "assignees">): string {
-  return `${d.startSec}|${d.endSec}|${d.title}|${[...d.assignees].sort((a, b) => a - b).join(",")}`;
+/**
+ * What was written for a booking, so a change in time, title, assignees or notes is noticed. The notes
+ * hold the customer's phone number and words, so only a fingerprint of them is kept, never the text.
+ */
+export function signatureOf(d: Pick<DesiredShift, "startSec" | "endSec" | "title" | "assignees" | "notes">): string {
+  const notes = d.notes ? createHash("sha256").update(d.notes).digest("hex").slice(0, 12) : "";
+  return `${d.startSec}|${d.endSec}|${d.title}|${[...d.assignees].sort((a, b) => a - b).join(",")}|${notes}`;
 }
 
 export type Plan = {

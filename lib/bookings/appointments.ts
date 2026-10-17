@@ -1,3 +1,5 @@
+import { customerDetails, type CustomerDetails } from "./details";
+
 export type GraphDateTime = { dateTime?: string; timeZone?: string };
 
 /** The parts of a Microsoft Bookings appointment this uses. Everything is optional: the shape is checked, not assumed. */
@@ -10,7 +12,9 @@ export type RawAppointment = {
   startDateTime?: GraphDateTime;
   endDateTime?: GraphDateTime;
   customerName?: string;
-  customers?: { name?: string }[];
+  customerPhone?: string;
+  customerNotes?: string | null;
+  customers?: { name?: string; phone?: string; notes?: string | null }[];
   isCancelled?: boolean;
 };
 
@@ -19,8 +23,10 @@ export type BookingAppointment = {
   service: string;
   startSec: number;
   endSec: number;
-  /** First name only: the rest of the customer's details are not copied. */
+  /** First name, used in the shift title. */
   firstName: string | null;
+  /** Full name, phone and the customer's own note, shown inside the shift's notes. */
+  details: CustomerDetails;
 };
 
 const IRISH_ZONES = new Set(["europe/dublin", "gmt standard time", "greenwich standard time"]);
@@ -96,12 +102,12 @@ export function normaliseAppointments(raw: RawAppointment[]): Normalised {
       continue;
     }
     const service = (r.serviceName ?? "").replace(/\s+/g, " ").trim().slice(0, 80) || "Showroom";
-    byId.set(id, { id, service, startSec, endSec, firstName: firstNameOf(r.customers?.[0]?.name ?? r.customerName) });
+    byId.set(id, { id, service, startSec, endSec, firstName: firstNameOf(r.customers?.[0]?.name ?? r.customerName), details: customerDetails(r) });
   }
   return { appointments: Array.from(byId.values()).sort((a, b) => a.startSec - b.startSec || a.id.localeCompare(b.id)), skipped };
 }
 
-/** What the team sees in Connecteam. Showroom or visit type and a first name; nothing else about the customer. */
+/** The shift title in Connecteam: the showroom or visit type and a first name. The rest is in the shift's notes. */
 export function shiftTitle(a: Pick<BookingAppointment, "service" | "firstName">, labels: Record<string, string> = {}): string {
   const service = labels[a.service] ?? a.service;
   return `Showroom visit – ${service}${a.firstName ? ` – ${a.firstName}` : ""}`.slice(0, 120);

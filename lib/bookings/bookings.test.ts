@@ -4,6 +4,7 @@ import { appointmentAssignees, appointmentSchedulerIdFromEnv, assigneesFor, book
 import { fetchBookingAppointments, resetGraphTokenCache, tokenRoles } from "./graph";
 import { PLAN_LIMITS, planSync, signatureOf, type DesiredShift, type ShiftLink } from "./plan";
 import { createdShiftId, shiftPayload, shiftUpdatePayload } from "../connecteam/shifts-write";
+import { customerDetails, escapeHtml, notesHtml } from "./details";
 
 describe("appointment times", () => {
   const sec = (iso: string) => Date.parse(iso) / 1000;
@@ -451,5 +452,66 @@ describe("Microsoft Graph reading", () => {
       vi.fn(async (url: string) => (url.includes("login.microsoftonline.com") ? new Response(JSON.stringify({ access_token: "tok" })) : new Response("no", { status: 403 })))
     );
     await expect(fetchBookingAppointments(cfg, "a", "b")).rejects.toThrow(/permission or admin consent/);
+  });
+});
+
+describe("customer details for the shift notes", () => {
+  it("takes name, phone and note from the first customer, falling back to the top-level fields", () => {
+    expect(customerDetails({ customers: [{ name: "Sarah Byrne", phone: "087 123 4567", notes: "Oak doors, 12 of them" }], customerName: "Someone Else" })).toEqual({
+      name: "Sarah Byrne",
+      phone: "087 123 4567",
+      note: "Oak doors, 12 of them",
+    });
+    expect(customerDetails({ customerName: "Tom Ryan", customerPhone: "01 555 0100", customerNotes: "Ring first" })).toEqual({ name: "Tom Ryan", phone: "01 555 0100", note: "Ring first" });
+    expect(customerDetails({})).toEqual({ name: null, phone: null, note: null });
+    expect(customerDetails({ customers: [{ name: "  ", phone: "", notes: null }] })).toEqual({ name: null, phone: null, note: null });
+  });
+
+  it("keeps a phone number to digits and ordinary punctuation, and limits every field's length", () => {
+    expect(customerDetails({ customerPhone: "+353 (87) 123-4567 ext <b>9</b>" }).phone).toBe("+353 (87) 123-4567 9");
+    const long = customerDetails({ customerName: "x".repeat(500), customerNotes: "y".repeat(2000), customerPhone: "1".repeat(200) });
+    expect(long.name?.length).toBe(120);
+    expect(long.note?.length).toBe(600);
+    expect(long.phone?.length).toBe(40);
+  });
+
+  it("writes the notes as escaped HTML, so a customer cannot add markup or links", () => {
+    const html = notesHtml({ name: 'Sarah <script>alert(1)</script> "Byrne"', phone: "087 123 4567", note: "Line one\nLine <b>two</b> & more" }) as string;
+    expect(html).toContain("<strong>Customer:</strong> Sarah &lt;script&gt;alert(1)&lt;/script&gt; &quot;Byrne&quot;");
+    expect(html).toContain("<strong>Phone:</strong> 087 123 4567");
+    expect(html).toContain("Line one<br>Line &lt;b&gt;two&lt;/b&gt; &amp; more");
+    expect(html).not.toMatch(/<script|<b>two/);
+    expect(escapeHtml("a&b<c>'d'")).toBe("a&amp;b&lt;c&gt;&#39;d&#39;");
+  });
+
+  it("leaves out whatever is missing, and makes no note at all when there is nothing", () => {
+    expect(notesHtml({ name: "Sarah Byrne", phone: null, note: null })).toBe("<p><strong>Customer:</strong> Sarah Byrne</p>");
+    expect(notesHtml({ name: null, phone: "087 1", note: null })).toBe("<p><strong>Phone:</strong> 087 1</p>");
+    expect(notesHtml({ name: null, phone: null, note: null })).toBeUndefined();
+  });
+
+  it("rides along on a normalised appointment", () => {
+    const r = normaliseAppointments([
+      { id: "a", serviceName: "Kylemore", start: { dateTime: "2026-10-20T12:00:00", timeZone: "UTC" }, end: { dateTime: "2026-10-20T12:30:00", timeZone: "UTC" }, customers: [{ name: "Sarah Byrne", phone: "087 123 4567", notes: "Hi" }] },
+    ]);
+    expect(r.appointments[0].details).toEqual({ name: "Sarah Byrne", phone: "087 123 4567", note: "Hi" });
+    expect(r.appointments[0].firstName).toBe("Sarah");
+  });
+
+  it("puts the notes in the Connecteam request in its note format, and only when there are some", () => {
+    const withNotes = shiftPayload({ startSec: 1, endSec: 2, title: "T", assignees: [5], notesHtml: "<p>x</p>" });
+    expect(withNotes.notes).toEqual([{ type: "html", html: "<p>x</p>" }]);
+    expect(shiftPayload({ startSec: 1, endSec: 2, title: "T", assignees: [5] })).not.toHaveProperty("notes");
+    expect(shiftUpdatePayload("s1", { startSec: 1, endSec: 2, title: "T", assignees: [5], notesHtml: "<p>x</p>" }).notes).toEqual([{ type: "html", html: "<p>x</p>" }]);
+  });
+
+  it("notices a change in the notes without ever storing their text", () => {
+    const base = { startSec: 1, endSec: 2, title: "T", assignees: [5] };
+    const a = signatureOf({ ...base, notes: "<p>Phone: 087 123 4567</p>" });
+    expect(a).not.toMatch(/087|Phone/);
+    expect(signatureOf({ ...base, notes: "<p>Phone: 087 123 4567</p>" })).toBe(a);
+    expect(signatureOf({ ...base, notes: "<p>Phone: 087 999 9999</p>" })).not.toBe(a);
+    expect(signatureOf(base)).not.toBe(a);
+    expect(signatureOf(base)).toBe(signatureOf({ ...base, notes: undefined }));
   });
 });

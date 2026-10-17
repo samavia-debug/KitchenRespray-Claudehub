@@ -6,6 +6,8 @@ export type NewShift = {
   title: string;
   /** Empty means an open (unassigned) shift. */
   assignees: number[];
+  /** Text shown inside the shift, as HTML. */
+  notesHtml?: string;
 };
 
 /**
@@ -21,6 +23,7 @@ export function shiftPayload(s: NewShift): Record<string, unknown> {
     isPublished: true,
     timezone: "Europe/Dublin",
   };
+  if (s.notesHtml) body.notes = [{ type: "html", html: s.notesHtml }];
   if (s.assignees.length > 0) body.assignedUserIds = s.assignees;
   else Object.assign(body, { isOpenShift: true, openSpots: 1 });
   return body;
