@@ -90,6 +90,14 @@ regardless of hosting plan since it's just a normal authenticated API call,
 not Vercel's native Cron feature. Upgrading to Vercel Pro removes the
 need for this — `vercel.json` can go back to `*/30 * * * *` at that point.
 
+The scheduler gives up on a request after 30 seconds, so the work is split
+across three endpoints, each keeping itself to about 24 seconds and picking up
+where it left off on the next call. All use the same `Authorization: Bearer
+<CRON_SECRET>` header: `/api/monitoring/cron` (website checks, security scan,
+Google sync, alerts; every 30 minutes), `/api/connecteam/cron` (the Connecteam
+syncs; every 30 minutes) and `/api/bookings/cron` (website appointments into
+Connecteam; every 5 minutes).
+
 **Adding more sites** — no schema or code changes needed. Admin/Manager users
 add a website from the Command Centre UI, or insert directly into the
 `websites` table. Designed to scale to 100+ rows without redesign.

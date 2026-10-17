@@ -3,45 +3,29 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { runAndRecordCheck, runAndRecordSecurityCheck } from "@/lib/monitoring/record";
 import { syncGoogleConnections } from "@/lib/google/sync";
 import { isConnecteamConfigured } from "@/lib/connecteam/client";
-import { getConnecteamStatus, syncConnecteamStaff } from "@/lib/connecteam/sync";
-import { getVehicleStatus, syncVehicleInspections } from "@/lib/connecteam/vehicles-sync";
-import { getPpeStatus, syncPpeRequests } from "@/lib/connecteam/ppe-sync";
-import { getScheduleStatus, getTimeClockStatus, getTimeOffStatus, syncSchedule, syncTimeClock, syncTimeOff } from "@/lib/connecteam/time-sync";
 import { notifySlack, notifyWhatsApp } from "@/lib/monitoring/notify";
 import { sendComplianceAlerts } from "@/lib/compliance/service";
 import { bookingsWriteEnabled, graphConfig } from "@/lib/bookings/config";
 import { bookingsRanRecently, runBookingsSync } from "@/lib/bookings/service";
 
 const CONCURRENCY = 5;
+// Health checks are all network waits on different sites, so more of them can run side by side.
+const CHECK_CONCURRENCY = 10;
 
-// Matches /api/google/sync's own maxDuration — this route can now also run
-// a Google sync pass in the same invocation, on the roughly-daily tick
-// where connections are stale.
+// The scheduler (cron-job.org) stops waiting after 30 seconds, so this tick keeps itself to about 24. Every
+// stage below is picked up where it left off on the next tick (each site, scan and connection has its own
+// "last done" time), so running out of budget only means a little work is left for later. The Connecteam
+// syncs have their own tick at /api/connecteam/cron so they do not compete for this time.
 export const maxDuration = 60;
-const MAX_DURATION_MS = maxDuration * 1000;
-// Skip the Google sync pass entirely (rather than starting it and risking
-// a mid-batch cutoff) once less than this much of the budget remains after
-// health checks — the per-connection staleness filter means whatever gets
-// skipped is simply picked up on a later tick, so skipping cleanly here is
-// strictly better than starting a sync that has no real chance to finish.
-const MIN_SYNC_BUDGET_MS = 15_000;
-// Security scan runs far less often than the health check (every 6h per
-// site, not every 30min) — it's cheap per-fetch but there's no value in
-// re-scanning a clean site every tick, and this keeps 30+ extra full-page
-// fetches from stacking onto every single cron run.
+const MAX_DURATION_MS = 24_000;
+// Skip the security scan once less than this much of the budget remains (a batch can take 15 s).
 const SECURITY_SCAN_STALE_HOURS = 6;
 const MIN_SECURITY_BUDGET_MS = 10_000;
-const CONNECTEAM_STALE_HOURS = 20;
-const VEHICLES_STALE_HOURS = 3;
-const PPE_STALE_HOURS = 3;
-const TIME_STALE_HOURS = 3;
-// "Who's working right now" and late arrivals need fresh clock-ins, so the
-// clock and rota refresh on every 30 minute tick (the check is 24 minutes so
-// a tick that lands a little early still counts as due).
-const LIVE_STALE_HOURS = 0.4;
-// The very first time-clock sync reads over a year of history, so give it more room.
-const MIN_TIME_BUDGET_MS = 25_000;
-const MIN_CONNECTEAM_BUDGET_MS = 10_000;
+// A batch of health checks (a site can take 10 s to answer) is only started with this much left.
+const MIN_CHECK_BATCH_BUDGET_MS = 8_000;
+// The Google pass starts with at least this much left, and stops starting new batches shortly before the end.
+const MIN_SYNC_BUDGET_MS = 8_000;
+const GOOGLE_STOP_MARGIN_MS = 4_000;
 // The appointment copy is light, so it only needs a little room.
 const MIN_BOOKINGS_BUDGET_MS = 8_000;
 
@@ -86,17 +70,21 @@ async function runCron(request: NextRequest) {
   );
 
   const now = Date.now();
-  const due = (websites || []).filter((w) => {
-    const last = lastCheckedMap.get(w.id);
-    if (!last) return true;
-    const elapsedMinutes = (now - new Date(last).getTime()) / 60_000;
-    return elapsedMinutes >= w.monitoring_interval_minutes;
-  });
+  // Longest-unchecked first, so if the budget runs out it is always the most recently checked sites that wait.
+  const due = (websites || [])
+    .filter((w) => {
+      const last = lastCheckedMap.get(w.id);
+      if (!last) return true;
+      const elapsedMinutes = (now - new Date(last).getTime()) / 60_000;
+      return elapsedMinutes >= w.monitoring_interval_minutes;
+    })
+    .sort((a, b) => (lastCheckedMap.get(a.id) ?? "").localeCompare(lastCheckedMap.get(b.id) ?? ""));
 
   const results: { domain: string; ok: boolean; error?: string }[] = [];
 
-  for (let i = 0; i < due.length; i += CONCURRENCY) {
-    const batch = due.slice(i, i + CONCURRENCY);
+  for (let i = 0; i < due.length; i += CHECK_CONCURRENCY) {
+    if (i > 0 && MAX_DURATION_MS - (Date.now() - cronStart) < MIN_CHECK_BATCH_BUDGET_MS) break;
+    const batch = due.slice(i, i + CHECK_CONCURRENCY);
     const batchResults = await Promise.allSettled(
       batch.map((w) => runAndRecordCheck(w.id, w.domain))
     );
@@ -158,7 +146,7 @@ async function runCron(request: NextRequest) {
     googleSync = { synced: 0, failed: 0, skipped: true };
   } else {
     try {
-      const syncResults = await syncGoogleConnections(undefined, { onlyStaleHours: 20 });
+      const syncResults = await syncGoogleConnections(undefined, { onlyStaleHours: 20, stopAt: cronStart + MAX_DURATION_MS - GOOGLE_STOP_MARGIN_MS });
       const synced = syncResults.filter((r) => r.ok).length;
       const failed = syncResults.filter((r) => !r.ok).length;
       googleSync = { synced, failed };
@@ -201,123 +189,6 @@ async function runCron(request: NextRequest) {
     }
   }
 
-  // Staff data changes rarely, so Connecteam is re-synced about daily. Its
-  // own try/catch keeps a Connecteam problem (expired key, API outage) from
-  // ever affecting the health checks or Google sync above.
-  let connecteamSync: { synced?: number; error?: string; skipped?: string } = { skipped: "not connected" };
-  if (isConnecteamConfigured()) {
-    try {
-      const status = await getConnecteamStatus();
-      const ageHours = status.lastSyncedAt ? (Date.now() - new Date(status.lastSyncedAt).getTime()) / 3_600_000 : Infinity;
-      if (ageHours < CONNECTEAM_STALE_HOURS) {
-        connecteamSync = { skipped: "fresh" };
-      } else if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_CONNECTEAM_BUDGET_MS) {
-        connecteamSync = { skipped: "out of time budget" };
-      } else {
-        const result = await syncConnecteamStaff();
-        connecteamSync = { synced: result.total };
-      }
-    } catch (err: any) {
-      connecteamSync = { error: err.message };
-    }
-  }
-
-  // Vehicle inspections arrive through the week and "who hasn't submitted"
-  // is only useful if fairly current, so this refreshes every few hours.
-  let vehiclesSync: { synced?: number; error?: string; skipped?: string } = { skipped: "not connected" };
-  if (isConnecteamConfigured()) {
-    try {
-      const status = await getVehicleStatus();
-      const ageHours = status.lastSyncedAt ? (Date.now() - new Date(status.lastSyncedAt).getTime()) / 3_600_000 : Infinity;
-      if (ageHours < VEHICLES_STALE_HOURS) {
-        vehiclesSync = { skipped: "fresh" };
-      } else if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_CONNECTEAM_BUDGET_MS) {
-        vehiclesSync = { skipped: "out of time budget" };
-      } else {
-        const result = await syncVehicleInspections();
-        vehiclesSync = { synced: result.total };
-      }
-    } catch (err: any) {
-      vehiclesSync = { error: err.message };
-    }
-  }
-
-  // Tools & PPE requests: the manager marks them Done in Connecteam, so a
-  // fairly frequent refresh keeps "what is still open" honest.
-  let ppeSync: { synced?: number; error?: string; skipped?: string } = { skipped: "not connected" };
-  if (isConnecteamConfigured()) {
-    try {
-      const status = await getPpeStatus();
-      const ageHours = status.lastSyncedAt ? (Date.now() - new Date(status.lastSyncedAt).getTime()) / 3_600_000 : Infinity;
-      if (ageHours < PPE_STALE_HOURS) {
-        ppeSync = { skipped: "fresh" };
-      } else if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_CONNECTEAM_BUDGET_MS) {
-        ppeSync = { skipped: "out of time budget" };
-      } else {
-        const result = await syncPpeRequests();
-        ppeSync = { synced: result.total };
-      }
-    } catch (err: any) {
-      ppeSync = { error: err.message };
-    }
-  }
-
-  // Time clock and time off: "who forgot to clock out" and "who's off today"
-  // are only useful when current, so these also refresh every few hours.
-  let timeClockSync: { synced?: number; error?: string; skipped?: string } = { skipped: "not connected" };
-  if (isConnecteamConfigured()) {
-    try {
-      const status = await getTimeClockStatus();
-      const ageHours = status.lastSyncedAt ? (Date.now() - new Date(status.lastSyncedAt).getTime()) / 3_600_000 : Infinity;
-      if (ageHours < LIVE_STALE_HOURS) {
-        timeClockSync = { skipped: "fresh" };
-      } else if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_TIME_BUDGET_MS) {
-        timeClockSync = { skipped: "out of time budget" };
-      } else {
-        const result = await syncTimeClock();
-        timeClockSync = { synced: result.shifts };
-      }
-    } catch (err: any) {
-      timeClockSync = { error: err.message };
-    }
-  }
-
-  let scheduleSync: { synced?: number; error?: string; skipped?: string } = { skipped: "not connected" };
-  if (isConnecteamConfigured()) {
-    try {
-      const status = await getScheduleStatus();
-      const ageHours = status.lastSyncedAt ? (Date.now() - new Date(status.lastSyncedAt).getTime()) / 3_600_000 : Infinity;
-      if (ageHours < LIVE_STALE_HOURS) {
-        scheduleSync = { skipped: "fresh" };
-      } else if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_TIME_BUDGET_MS) {
-        scheduleSync = { skipped: "out of time budget" };
-      } else {
-        const result = await syncSchedule();
-        scheduleSync = { synced: result.shifts };
-      }
-    } catch (err: any) {
-      scheduleSync = { error: err.message };
-    }
-  }
-
-  let timeOffSync: { synced?: number; error?: string; skipped?: string } = { skipped: "not connected" };
-  if (isConnecteamConfigured()) {
-    try {
-      const status = await getTimeOffStatus();
-      const ageHours = status.lastSyncedAt ? (Date.now() - new Date(status.lastSyncedAt).getTime()) / 3_600_000 : Infinity;
-      if (ageHours < TIME_STALE_HOURS) {
-        timeOffSync = { skipped: "fresh" };
-      } else if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_TIME_BUDGET_MS) {
-        timeOffSync = { skipped: "out of time budget" };
-      } else {
-        const result = await syncTimeOff();
-        timeOffSync = { synced: result.requests };
-      }
-    } catch (err: any) {
-      timeOffSync = { error: err.message };
-    }
-  }
-
   // Expiry warnings go out in working hours only, so nobody is woken for a licence that runs out next month.
   let complianceAlerts: { sent?: number; error?: string; skipped?: string } = { skipped: "outside working hours" };
   const dublinHour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Dublin", hour: "2-digit", hourCycle: "h23" }).format(Date.now()));
@@ -339,12 +210,6 @@ async function runCron(request: NextRequest) {
     securitySkipped: securityDue.length - securityResults.length,
     securityResults,
     googleSync,
-    connecteamSync,
-    vehiclesSync,
-    ppeSync,
-    timeClockSync,
-    scheduleSync,
-    timeOffSync,
     complianceAlerts,
     bookingsSync,
   });

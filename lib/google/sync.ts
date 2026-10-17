@@ -28,10 +28,12 @@ export type SyncResult = { website_id: string; service: string; ok: boolean; day
  * one service — a per-service "Sync now" button should only touch the
  * connection it was clicked from, not silently also re-sync the site's
  * other Google connection.
+ *
+ * `stopAt` (a timestamp) stops new batches from starting once it has passed, for callers with a time limit.
  */
 export async function syncGoogleConnections(
   websiteId?: string,
-  options?: { onlyStaleHours?: number; service?: string }
+  options?: { onlyStaleHours?: number; service?: string; stopAt?: number }
 ): Promise<SyncResult[]> {
   const supabase = createServiceClient();
 
@@ -53,6 +55,8 @@ export async function syncGoogleConnections(
   const results: SyncResult[] = [];
 
   for (let i = 0; i < list.length; i += CONCURRENCY) {
+    // Out of time: whatever is left is still stale, so the next scheduled pass picks it up.
+    if (options?.stopAt !== undefined && i > 0 && Date.now() >= options.stopAt) break;
     const batch = list.slice(i, i + CONCURRENCY);
     const batchResults = await Promise.all(
       batch.map(async (conn): Promise<SyncResult> => {
