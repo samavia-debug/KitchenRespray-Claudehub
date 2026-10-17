@@ -196,7 +196,9 @@ async function applyPlan(target: Target, plan: Plan, label: string, errors: stri
 
   for (const { link, desired: d } of plan.update) {
     try {
-      await updateShift(target.id, link.shift_id, shiftOf(d));
+      // Only a moved or renamed appointment pings the person; a notes-only change is made quietly.
+      const moved = Math.floor(Date.parse(link.start_at) / 1000) !== d.startSec || Math.floor(Date.parse(link.end_at) / 1000) !== d.endSec || link.title !== d.title;
+      await updateShift(target.id, link.shift_id, shiftOf(d), { notify: moved });
       const { error } = await supabase
         .from("booking_shift_links")
         .update({

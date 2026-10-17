@@ -29,10 +29,16 @@ export function shiftPayload(s: NewShift): Record<string, unknown> {
   return body;
 }
 
-/** Changing a shift can move it between open and assigned, so an update says which it now is. */
+/**
+ * The body of an update. Kept to the fields Connecteam's update call accepts: it names the shift "shiftId"
+ * (not "id") and refuses extras such as isEditForAllUsers. People are only included when there are some, as
+ * Connecteam reads that as "change who it is assigned to".
+ */
 export function shiftUpdatePayload(id: string, s: NewShift): Record<string, unknown> {
-  // Connecteam's update call names the shift "shiftId" (a request with "id" is refused with HTTP 400).
-  return { shiftId: id, ...shiftPayload(s), ...(s.assignees.length > 0 ? { isOpenShift: false } : {}), isEditForAllUsers: true };
+  const body: Record<string, unknown> = { shiftId: id, startTime: s.startSec, endTime: s.endSec, title: s.title };
+  if (s.notesHtml) body.notes = [{ type: "html", html: s.notesHtml }];
+  if (s.assignees.length > 0) body.assignedUserIds = s.assignees;
+  return body;
 }
 
 /** Connecteam's answer to a create carries the new shifts; anything else is not trusted as a success. */
@@ -49,8 +55,13 @@ export async function createShift(schedulerId: number, s: NewShift): Promise<str
   return id;
 }
 
-export async function updateShift(schedulerId: number, shiftId: string, s: NewShift): Promise<void> {
-  await connecteamSend("PUT", `/scheduler/v1/schedulers/${schedulerId}/shifts`, [shiftUpdatePayload(shiftId, s)]);
+/**
+ * `notify: false` stops Connecteam sending the assigned people a notification for this change. Used when only
+ * the notes (or who it belongs to) changed, so a person is only pinged when their appointment's time or title moves.
+ */
+export async function updateShift(schedulerId: number, shiftId: string, s: NewShift, opts: { notify?: boolean } = {}): Promise<void> {
+  const query = opts.notify === false ? "?notifyUsers=false" : "";
+  await connecteamSend("PUT", `/scheduler/v1/schedulers/${schedulerId}/shifts${query}`, [shiftUpdatePayload(shiftId, s)]);
 }
 
 export async function deleteShift(schedulerId: number, shiftId: string): Promise<void> {

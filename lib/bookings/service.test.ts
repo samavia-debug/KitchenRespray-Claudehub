@@ -252,7 +252,7 @@ describe("copying bookings", () => {
     world.calls = [];
     const r = await runBookingsSync({ apply: true });
     expect(r.counts).toMatchObject({ create: 0, update: 1 });
-    expect(puts()[0].body[0]).toMatchObject({ shiftId: "shift-1", assignedUserIds: [111], isOpenShift: false });
+    expect(puts()[0].body[0]).toMatchObject({ shiftId: "shift-1", assignedUserIds: [111] });
   });
 
   it("always lists every upcoming booking in a preview, even when nothing needs changing", async () => {
@@ -304,6 +304,25 @@ describe("copying bookings", () => {
     expect(puts()[0].url).toContain("/schedulers/55/shifts");
     expect(puts()[0].body[0]).toMatchObject({ shiftId: "shift-1" });
     expect(Date.parse(db.links[0].start_at) / 1000).toBe(Math.floor(stamp(4).getTime() / 1000));
+  });
+
+  it("pings the person only when the time moves, and makes a notes-only change quietly", async () => {
+    world.appts = [appt("a", 2, "Sarah Byrne", "Kylemore", "087 123 4567", "First")];
+    await runBookingsSync({ apply: true });
+
+    // Only the note changes: a silent update.
+    world.appts = [appt("a", 2, "Sarah Byrne", "Kylemore", "087 123 4567", "Second")];
+    world.calls = [];
+    await runBookingsSync({ apply: true });
+    expect(puts()).toHaveLength(1);
+    expect(puts()[0].url).toContain("notifyUsers=false");
+
+    // The appointment moves: the person is told.
+    world.appts = [appt("a", 4, "Sarah Byrne", "Kylemore", "087 123 4567", "Second")];
+    world.calls = [];
+    await runBookingsSync({ apply: true });
+    expect(puts()).toHaveLength(1);
+    expect(puts()[0].url).not.toContain("notifyUsers");
   });
 
   it("removes the shift of a cancelled booking", async () => {

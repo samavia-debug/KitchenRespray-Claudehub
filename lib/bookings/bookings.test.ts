@@ -292,9 +292,12 @@ describe("Connecteam shift payload", () => {
     expect(open).not.toHaveProperty("assignedUserIds");
   });
 
-  it("says on an update whether the shift is now assigned or open", () => {
-    expect(shiftUpdatePayload("s1", { startSec: 1, endSec: 2, title: "T", assignees: [5] })).toMatchObject({ shiftId: "s1", assignedUserIds: [5], isOpenShift: false, isEditForAllUsers: true });
-    expect(shiftUpdatePayload("s1", { startSec: 1, endSec: 2, title: "T", assignees: [] })).toMatchObject({ shiftId: "s1", isOpenShift: true, openSpots: 1 });
+  it("keeps an update to the fields Connecteam accepts", () => {
+    const body = shiftUpdatePayload("s1", { startSec: 1, endSec: 2, title: "T", assignees: [5], notesHtml: "<p>x</p>" });
+    expect(body).toEqual({ shiftId: "s1", startTime: 1, endTime: 2, title: "T", notes: [{ type: "html", html: "<p>x</p>" }], assignedUserIds: [5] });
+    // Connecteam answers HTTP 400 to isEditForAllUsers on this call.
+    expect(body).not.toHaveProperty("isEditForAllUsers");
+    expect(shiftUpdatePayload("s1", { startSec: 1, endSec: 2, title: "T", assignees: [] })).toEqual({ shiftId: "s1", startTime: 1, endTime: 2, title: "T" });
   });
 
   it("names the shift \"shiftId\" on an update, as Connecteam requires, and never \"id\"", () => {
