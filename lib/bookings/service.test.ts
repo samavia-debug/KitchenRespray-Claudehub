@@ -84,7 +84,7 @@ function from(table: string) {
 
 vi.mock("@/lib/supabase/service", () => ({ createServiceClient: () => ({ from }) }));
 
-import { runBookingsSync } from "./service";
+import { bookingsRanRecently, runBookingsSync } from "./service";
 import { resetGraphTokenCache } from "./graph";
 
 // ---- Fake Microsoft and Connecteam ----
@@ -252,7 +252,7 @@ describe("copying bookings", () => {
     world.calls = [];
     const r = await runBookingsSync({ apply: true });
     expect(r.counts).toMatchObject({ create: 0, update: 1 });
-    expect(puts()[0].body[0]).toMatchObject({ id: "shift-1", assignedUserIds: [111], isOpenShift: false });
+    expect(puts()[0].body[0]).toMatchObject({ shiftId: "shift-1", assignedUserIds: [111], isOpenShift: false });
   });
 
   it("always lists every upcoming booking in a preview, even when nothing needs changing", async () => {
@@ -302,7 +302,7 @@ describe("copying bookings", () => {
     expect(r.counts).toMatchObject({ create: 0, update: 1, remove: 0 });
     expect(puts()).toHaveLength(1);
     expect(puts()[0].url).toContain("/schedulers/55/shifts");
-    expect(puts()[0].body[0]).toMatchObject({ id: "shift-1" });
+    expect(puts()[0].body[0]).toMatchObject({ shiftId: "shift-1" });
     expect(Date.parse(db.links[0].start_at) / 1000).toBe(Math.floor(stamp(4).getTime() / 1000));
   });
 
@@ -575,5 +575,16 @@ describe("customer details in the shifts", () => {
     world.appts = [{ id: "x", serviceName: "Bray", start: gdt(stamp(2)), end: gdt(new Date(stamp(2).getTime() + 1_800_000)) }];
     await runBookingsSync({ apply: true });
     expect(bodyOf(posts()[0])).not.toHaveProperty("notes");
+  });
+});
+
+describe("telling whether the copy ran a moment ago", () => {
+  it("is true for a run within the window and false otherwise", async () => {
+    db.state.last_run_at = new Date(Date.now() - 3 * 60_000).toISOString();
+    expect(await bookingsRanRecently(10)).toBe(true);
+    db.state.last_run_at = new Date(Date.now() - 20 * 60_000).toISOString();
+    expect(await bookingsRanRecently(10)).toBe(false);
+    db.state.last_run_at = null;
+    expect(await bookingsRanRecently(10)).toBe(false);
   });
 });

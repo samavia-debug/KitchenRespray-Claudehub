@@ -293,8 +293,14 @@ describe("Connecteam shift payload", () => {
   });
 
   it("says on an update whether the shift is now assigned or open", () => {
-    expect(shiftUpdatePayload("s1", { startSec: 1, endSec: 2, title: "T", assignees: [5] })).toMatchObject({ id: "s1", assignedUserIds: [5], isOpenShift: false, isEditForAllUsers: true });
-    expect(shiftUpdatePayload("s1", { startSec: 1, endSec: 2, title: "T", assignees: [] })).toMatchObject({ id: "s1", isOpenShift: true, openSpots: 1 });
+    expect(shiftUpdatePayload("s1", { startSec: 1, endSec: 2, title: "T", assignees: [5] })).toMatchObject({ shiftId: "s1", assignedUserIds: [5], isOpenShift: false, isEditForAllUsers: true });
+    expect(shiftUpdatePayload("s1", { startSec: 1, endSec: 2, title: "T", assignees: [] })).toMatchObject({ shiftId: "s1", isOpenShift: true, openSpots: 1 });
+  });
+
+  it("names the shift \"shiftId\" on an update, as Connecteam requires, and never \"id\"", () => {
+    const body = shiftUpdatePayload("s1", { startSec: 1, endSec: 2, title: "T", assignees: [5], notesHtml: "<p>x</p>" });
+    expect(body.shiftId).toBe("s1");
+    expect(body).not.toHaveProperty("id");
   });
 
   it("only trusts a create that names the shift it made", () => {

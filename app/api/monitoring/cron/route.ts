@@ -10,7 +10,7 @@ import { getScheduleStatus, getTimeClockStatus, getTimeOffStatus, syncSchedule, 
 import { notifySlack, notifyWhatsApp } from "@/lib/monitoring/notify";
 import { sendComplianceAlerts } from "@/lib/compliance/service";
 import { bookingsWriteEnabled, graphConfig } from "@/lib/bookings/config";
-import { runBookingsSync } from "@/lib/bookings/service";
+import { bookingsRanRecently, runBookingsSync } from "@/lib/bookings/service";
 
 const CONCURRENCY = 5;
 
@@ -188,6 +188,9 @@ async function runCron(request: NextRequest) {
   if (graphConfig() && bookingsWriteEnabled() && isConnecteamConfigured()) {
     if (MAX_DURATION_MS - (Date.now() - cronStart) < MIN_BOOKINGS_BUDGET_MS) {
       bookingsSync = { skipped: "out of time budget" };
+    } else if (await bookingsRanRecently(10).catch(() => false)) {
+      // The dedicated short tick (every few minutes) has just done it.
+      bookingsSync = { skipped: "ran in the last 10 minutes" };
     } else {
       try {
         const r = await runBookingsSync({ apply: true });

@@ -31,7 +31,8 @@ export function shiftPayload(s: NewShift): Record<string, unknown> {
 
 /** Changing a shift can move it between open and assigned, so an update says which it now is. */
 export function shiftUpdatePayload(id: string, s: NewShift): Record<string, unknown> {
-  return { id, ...shiftPayload(s), ...(s.assignees.length > 0 ? { isOpenShift: false } : {}), isEditForAllUsers: true };
+  // Connecteam's update call names the shift "shiftId" (a request with "id" is refused with HTTP 400).
+  return { shiftId: id, ...shiftPayload(s), ...(s.assignees.length > 0 ? { isOpenShift: false } : {}), isEditForAllUsers: true };
 }
 
 /** Connecteam's answer to a create carries the new shifts; anything else is not trusted as a success. */

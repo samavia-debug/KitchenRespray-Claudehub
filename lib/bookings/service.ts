@@ -82,6 +82,16 @@ export async function getBookingsStatus(): Promise<BookingsStatus> {
   };
 }
 
+/**
+ * True when the appointment copy has already run within this many minutes. The long monitoring tick uses
+ * it to skip a second copy straight after the dedicated short tick has done one, which keeps it shorter.
+ */
+export async function bookingsRanRecently(minutes: number): Promise<boolean> {
+  const { data } = await createServiceClient().from("booking_sync_state").select("last_run_at").eq("id", 1).maybeSingle();
+  const last = data?.last_run_at ? Date.parse(data.last_run_at as string) : 0;
+  return last > Date.now() - minutes * 60_000;
+}
+
 type Target = { id: number; name: string };
 
 /** The Showroom Appointment schedule, and any extra schedules asked for, found by id or exact name. */
