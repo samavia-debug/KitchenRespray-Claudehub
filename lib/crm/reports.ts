@@ -36,6 +36,9 @@ export type RCompany = {
   last_contacted_at: string | null;
   estimated_value: number | null;
   won_value: number | null;
+  /** Only needed by the AI sales summaries. */
+  priority?: string;
+  next_follow_up?: string | null;
 };
 export type RStage = { id: string; name: string; kind: StageKind; sort_order: number; active: boolean };
 export type RCategory = { id: string; name: string; active: boolean };

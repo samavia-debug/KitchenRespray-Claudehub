@@ -13,6 +13,7 @@ import { useCrm } from "../../crm-context";
 import { FOLLOW_UP_COLOR, fmtDate, fmtDateTime, fmtMoney, followUpState, personName, whatsappLink } from "../../fmt";
 import StageDialog from "../../stage-dialog";
 import ActivitySection from "../../activity-section";
+import AiAssistant from "../../ai-assistant";
 import OpportunitiesSection from "../../opportunities-section";
 import TasksSection from "../../tasks-section";
 
@@ -180,6 +181,8 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
 
       <TasksSection companyId={params.id} contacts={contacts.map((c) => ({ id: c.id, full_name: c.full_name }))} onChanged={changed} refreshKey={refresh} />
       <ActivitySection companyId={params.id} contacts={contacts.map((c) => ({ id: c.id, full_name: c.full_name }))} onChanged={changed} refreshKey={refresh} />
+
+      <AiAssistant company={company} contacts={contacts} onChanged={changed} />
 
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.9rem" }}>

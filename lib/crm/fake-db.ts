@@ -101,6 +101,12 @@ function run(q: any): { data?: any; error: { message: string } | null; count?: n
     rows.push(...made);
     return { data: q.single ? made[0] : made, error: null };
   }
+  if (q.op === "upsert") {
+    const existing = rows.find((r) => r[q.onConflict] === q.payload[q.onConflict]);
+    if (existing) Object.assign(existing, q.payload);
+    else rows.push({ created_at: new Date().toISOString(), ...q.payload });
+    return { data: [existing ?? rows[rows.length - 1]], error: null };
+  }
   if (q.op === "update") {
     const hit = rows.filter((r) => matches(withRelations(q.table, r, q.selectStr)));
     hit.forEach((r) => Object.assign(r, q.payload));
@@ -147,6 +153,7 @@ export function fakeFrom(table: string) {
     },
     insert(p: any) { q.op = "insert"; q.payload = p; return api; },
     update(p: any) { q.op = "update"; q.payload = p; return api; },
+    upsert(p: any, o?: { onConflict?: string }) { q.op = "upsert"; q.payload = p; q.onConflict = o?.onConflict ?? "id"; return api; },
     delete() { q.op = "delete"; return api; },
     eq(c: string, v: any) { q.preds.push((r: Row) => get(r, c) === v); return api; },
     neq(c: string, v: any) { q.preds.push((r: Row) => get(r, c) !== v); return api; },

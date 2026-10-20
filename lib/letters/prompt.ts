@@ -66,7 +66,7 @@ export function defaultSalutation(recipientName?: string): { greeting: string; c
   return name ? { greeting: `Dear ${name},`, closing: "Yours sincerely," } : { greeting: "Dear Sir or Madam,", closing: "Yours faithfully," };
 }
 
-function parseJson(raw: string): unknown {
+export function parseJson(raw: string): unknown {
   let text = raw.trim();
   const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
   if (fenced) text = fenced[1].trim();

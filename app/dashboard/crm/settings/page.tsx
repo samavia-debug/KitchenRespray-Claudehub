@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { api } from "../api";
+import AiSettings from "../ai-settings";
 import { useCrm } from "../crm-context";
 
 type Item = { id: string; name: string; active: boolean; sort_order: number; kind?: string };
@@ -98,6 +99,7 @@ export default function CrmSettingsPage() {
         items={meta.stages}
         reload={reload}
       />
+      <AiSettings />
     </>
   );
 }

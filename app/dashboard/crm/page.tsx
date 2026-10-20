@@ -7,6 +7,7 @@ import { METRIC_INFO, type MetricKey } from "@/lib/crm/reports";
 import { useCrm } from "./crm-context";
 import { StageBadge } from "./badges";
 import { fmtDate, fmtMoney } from "./fmt";
+import AskSales from "./ask-sales";
 import { Controls, DrillPanel, ReportControls, StatTile, useControls, useReport } from "./report-ui";
 
 /** The ten figures asked for, in the order they are read: how big, how busy, what is due, and what it is worth. */
@@ -81,6 +82,8 @@ export default function OverviewPage() {
           </p>
         ))}
       </div>
+
+      <AskSales controls={controls} />
 
       {open && m && <DrillPanel title={METRIC_INFO[open].label} hint={METRIC_INFO[open].hint} metric={m[open]} onClose={() => setOpen(null)} />}
 

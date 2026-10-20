@@ -8,10 +8,10 @@ import { fail, STAFF_ROLES, type Db } from "./service";
 const num = (v: unknown): number | null => (v === null || v === undefined ? null : Number(v));
 
 /** The rows the overview and reports are built from. Only the columns they need, and only what the range calls for. */
-async function loadData(db: Db, range: { startIso: string; endIso: string }): Promise<ReportData> {
+export async function loadReportData(db: Db, range: { startIso: string; endIso: string }): Promise<ReportData> {
   const [companies, stages, categories, people, activities, openTasks, doneTasks, stageHistory, opportunities, oppHistory] = await Promise.all([
     fetchAllRows<any>((from, to) =>
-      db.from("crm_companies").select("id, name, category_id, assigned_to, created_by, created_at, stage_id, stage_changed_at, last_contacted_at, estimated_value, won_value").is("archived_at", null).order("id").range(from, to)
+      db.from("crm_companies").select("id, name, category_id, assigned_to, created_by, created_at, stage_id, stage_changed_at, last_contacted_at, estimated_value, won_value, priority, next_follow_up").is("archived_at", null).order("id").range(from, to)
     ),
     db.from("crm_stages").select("id, name, kind, sort_order, active"),
     db.from("crm_categories").select("id, name, active"),
@@ -52,6 +52,6 @@ export async function loadReport(req: ReportRequest, today: string = dublinToday
   const range = resolveRange(req.range, today, req.from, req.to);
   if ("error" in range) return range;
   const filters: ReportFilters = { category_id: req.category_id, staff_id: req.staff_id };
-  const data = await loadData(createServiceClient(), range);
+  const data = await loadReportData(createServiceClient(), range);
   return buildReport(data, range, filters, today);
 }
