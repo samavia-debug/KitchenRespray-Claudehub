@@ -452,6 +452,23 @@ button {
   border-bottom-color: var(--accent);
 }
 
+/* A flex child will not shrink below its widest content, so a wide table pushed the whole page sideways, and a two-column
+   grid would not narrow either. With these, tables scroll inside their own box and the columns stack on a narrow screen.
+   Scoped to pages that show the CRM header, so no other page changes. */
+.app-shell > div:has(.crm-page-header) {
+  min-width: 0;
+}
+
+.main-area:has(.crm-page-header) .grid-2 > * {
+  min-width: 0;
+}
+
+@media (max-width: 720px) {
+  .main-area:has(.crm-page-header) .grid-2 {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .crm-filters {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));

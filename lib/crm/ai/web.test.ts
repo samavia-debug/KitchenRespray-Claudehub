@@ -129,6 +129,40 @@ describe("extractPage", () => {
   it("limits how much text it keeps", () => {
     expect(extractPage(`<p>${"word ".repeat(5000)}</p>`).text.length).toBeLessThanOrEqual(8000);
   });
+
+  it("drops a script block that never closes along with everything after it, and keeps what came before", () => {
+    const p2 = extractPage("<p>Before the script</p><script>var x = 1; <p>after</p>");
+    expect(p2.text).toContain("Before the script");
+    expect(p2.text).not.toContain("after");
+  });
+});
+
+// A page comes from a site we do not control, so a hostile page must cost no more than a normal one.
+describe("a hostile page cannot make the reader slow", () => {
+  const timed = (page: string) => {
+    const t0 = Date.now();
+    const result = extractPage(page);
+    return { ms: Date.now() - t0, result };
+  };
+  const hostile: [string, string][] = [
+    ["a hundred thousand scripts that never close", "<script>".repeat(100_000)],
+    ["a hundred thousand tags that never end", "<a href=\"x\"".repeat(100_000)],
+    ["a hundred thousand titles that never close", "<title>".repeat(100_000)],
+    ["a hundred thousand comments that never close", "<!--".repeat(100_000)],
+    ["a hundred thousand less-than signs", "<".repeat(300_000)],
+    ["a hundred thousand links", "<a href=\"https://example.org/x\">x</a>".repeat(30_000)],
+    ["a huge attribute", `<a href="${"x".repeat(1_400_000)}">x</a>`],
+    ["an endless run of address characters with no @", "a".repeat(1_400_000)],
+    ["an endless run of digits and spaces", "0 ".repeat(700_000)],
+    ["an endless run of address characters and dots", "a.".repeat(700_000) + "@"],
+  ];
+  for (const [label, page] of hostile) {
+    it(`copes with ${label}`, () => {
+      const { ms, result } = timed(page);
+      expect(ms).toBeLessThan(1500);
+      expect(result.text.length).toBeLessThanOrEqual(8000);
+    });
+  }
 });
 
 // ---- Fetching, against real local servers ----

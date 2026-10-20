@@ -3,6 +3,7 @@ import { fetchAllRows } from "@/lib/supabase/paginate";
 import { companyKeys, contactKeys, matchCompanies, matchContacts, type CompanyKeys, type ExistingCompany, type ExistingContact } from "./duplicates";
 import { CLOSING_KINDS, type Assignee, type Category, type Company, type CompanyFields, type CompanyQuery, type Contact, type ContactDuplicateMatch, type ContactFields, type DuplicateMatch, type Stage } from "./types";
 import type { BulkChange, StageChange } from "./validate";
+import { PublicError } from "./errors";
 
 export type Db = ReturnType<typeof createServiceClient>;
 
@@ -12,8 +13,14 @@ export const STAFF_ROLES = ["Admin", "Manager", "Staff"];
 export const COMPANY_SELECT =
   "*, category:crm_categories(name), stage:crm_stages(name, kind), assignee:profiles!assigned_to(email), contacts:crm_contacts(count)";
 
+/** A refused save of a list item, as a plain message; the database's own text only goes to the log. */
+function saveFailed(detail: string, what: string): string {
+  console.error(`[crm] could not save the ${what}:`, detail);
+  return `Could not save the ${what}`;
+}
+
 export function fail(error: { message: string } | null | undefined, what: string): never {
-  throw new Error(`${what}: ${error?.message ?? "unknown error"}`);
+  throw new PublicError(what, error?.message ?? "unknown error");
 }
 
 /** What the company list and profile show: the stored row with the related names flattened in. */
@@ -87,7 +94,7 @@ export async function saveCategory(
     if (!name) return { error: "Enter a category name" };
     const { count } = await db.from("crm_categories").select("id", { count: "exact", head: true });
     const { data, error } = await db.from("crm_categories").insert({ name, sort_order: (count ?? 0) + 1 }).select("id").single();
-    if (error) return { error: /duplicate|unique/i.test(error.message) ? "There is already a category with that name" : error.message };
+    if (error) return { error: /duplicate|unique/i.test(error.message) ? "There is already a category with that name" : saveFailed(error.message, "category") };
     await logEvent(db, userId, "category_created", "category", data.id);
     return { id: data.id };
   }
@@ -97,7 +104,7 @@ export async function saveCategory(
   if (input.active !== undefined) patch.active = input.active;
   if (input.sort_order !== undefined) patch.sort_order = input.sort_order;
   const { error } = await db.from("crm_categories").update(patch).eq("id", input.id);
-  if (error) return { error: /duplicate|unique/i.test(error.message) ? "There is already a category with that name" : error.message };
+  if (error) return { error: /duplicate|unique/i.test(error.message) ? "There is already a category with that name" : saveFailed(error.message, "category") };
   await logEvent(db, userId, "category_updated", "category", input.id, { fields: Object.keys(patch) });
   return { id: input.id };
 }
@@ -119,7 +126,7 @@ export async function saveStage(
     const firstClosing = closing?.[0] ? Number(closing[0].sort_order) : null;
     const sort = firstClosing !== null && firstClosing > lastOpen ? (lastOpen + firstClosing) / 2 : lastOpen + 1;
     const { data, error } = await db.from("crm_stages").insert({ name, kind: "open", sort_order: sort }).select("id").single();
-    if (error) return { error: /duplicate|unique/i.test(error.message) ? "There is already a stage with that name" : error.message };
+    if (error) return { error: /duplicate|unique/i.test(error.message) ? "There is already a stage with that name" : saveFailed(error.message, "stage") };
     await logEvent(db, userId, "stage_created", "stage", data.id);
     return { id: data.id };
   }
@@ -133,7 +140,7 @@ export async function saveStage(
   if (input.active !== undefined) patch.active = input.active;
   if (input.sort_order !== undefined) patch.sort_order = input.sort_order;
   const { error } = await db.from("crm_stages").update(patch).eq("id", input.id);
-  if (error) return { error: /duplicate|unique/i.test(error.message) ? "There is already a stage with that name" : error.message };
+  if (error) return { error: /duplicate|unique/i.test(error.message) ? "There is already a stage with that name" : saveFailed(error.message, "stage") };
   await logEvent(db, userId, "stage_updated", "stage", input.id, { fields: Object.keys(patch) });
   return { id: input.id };
 }
@@ -170,7 +177,9 @@ export async function findDuplicateCompanies(keys: CompanyKeys, ignoreId?: strin
 
 async function findDuplicateContacts(db: Db, companyId: string, keys: { name_key: string; email_key: string | null; phone_key: string | null }, ignoreId?: string): Promise<ContactDuplicateMatch[]> {
   const clauses: string[] = [];
-  if (keys.email_key) clauses.push(`email_key.eq.${keys.email_key.replace(/[,()]/g, "")}`);
+  // An address with anything unusual in it is not put in the filter at all (it could change what the filter means); the
+  // phone and name checks still run, and a duplicate on the address alone is then simply not looked for.
+  if (keys.email_key && /^[a-z0-9._%+@'-]+$/.test(keys.email_key)) clauses.push(`email_key.eq.${keys.email_key}`);
   if (keys.phone_key) clauses.push(`phone_key.eq.${keys.phone_key}`);
   if (keys.name_key) clauses.push(`and(company_id.eq.${companyId},name_key.eq.${keys.name_key})`);
   if (clauses.length === 0) return [];

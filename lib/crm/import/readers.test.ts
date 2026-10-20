@@ -212,6 +212,24 @@ describe("parseSpreadsheet", () => {
     expect(r.cellsShortened).toBe(1);
   });
 
+  it("recognises an Apple Numbers file, by its name or by how it is built, and says how to convert it", () => {
+    const numbers = buildZip([
+      { name: "Index/Document.iwa", data: Buffer.from("snappy-compressed protobuf") },
+      { name: "Index/Tables/DataList.iwa", data: Buffer.from("x") },
+      { name: "Metadata/Properties.plist", data: Buffer.from("<plist/>") },
+    ]);
+    // Even called something else, a file built like a Numbers document is one.
+    expect(() => parseSpreadsheet("leads.zip", numbers)).toThrow(/Apple Numbers file.*Export To.*Excel/);
+    expect(() => parseSpreadsheet("leads.numbers", numbers)).toThrow(/Apple Numbers file/);
+    // Named .numbers but not even a zip (an older package, or a copy that was damaged on the way): the same helpful message.
+    expect(() => parseSpreadsheet("Leads.NUMBERS", Buffer.from("not a zip at all"))).toThrow(/Apple Numbers file/);
+    // A real Numbers file is often over the size limit; it still gets the useful message, not "too large".
+    expect(() => parseSpreadsheet("Big.numbers", Buffer.alloc(6 * 1024 * 1024))).toThrow(/Apple Numbers file/);
+    // An ordinary Excel file is not mistaken for one.
+    const sheetXml = `<worksheet ${NS}><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Company Name</t></is></c></row></sheetData></worksheet>`;
+    expect(parseSpreadsheet("leads.xlsx", workbook({ sheetXml })).headers).toEqual(["Company Name"]);
+  });
+
   it("reads an Excel file through the same path", () => {
     const sheetXml = `<worksheet ${NS}><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>Company Name</t></is></c></row><row r="2"><c r="A2" t="inlineStr"><is><t> Ace </t></is></c></row></sheetData></worksheet>`;
     expect(parseSpreadsheet("leads.xlsx", workbook({ sheetXml }))).toMatchObject({ headers: ["Company Name"], rows: [["Ace"]], sheets: ["Leads"] });
@@ -219,5 +237,58 @@ describe("parseSpreadsheet", () => {
 
   it("turns a damaged Excel file into a readable message", () => {
     expect(() => parseSpreadsheet("x.xlsx", Buffer.concat([Buffer.from([0x50, 0x4b, 0x03, 0x04]), Buffer.from("not really a zip")]))).toThrow(ImportFileError);
+  });
+});
+
+// A spreadsheet is uploaded by a person, but it may have come from anywhere. None of these may take noticeably longer
+// to read than a normal file, whatever they contain.
+describe("a hostile spreadsheet cannot make the reader slow", () => {
+  const read = (sheetXml: string, shared?: string[]) => {
+    const file = workbook({ sheetXml, shared });
+    const started = Date.now();
+    const rows = readXlsx(file).rows;
+    return { rows, ms: Date.now() - started };
+  };
+
+  it("tens of thousands of cells that never close", () => {
+    const { rows, ms } = read(`<worksheet ${NS}><sheetData><row r="1">${'<c r="A1" t="inlineStr"><is><t>x</t>'.repeat(120_000)}`);
+    expect(ms).toBeLessThan(1500);
+    expect(Array.isArray(rows)).toBe(true);
+  });
+
+  it("tens of thousands of cell tags that never even finish opening", () => {
+    const { ms } = read(`<worksheet ${NS}><sheetData><row r="1">${'<c r="A1" t="s" '.repeat(150_000)}`);
+    expect(ms).toBeLessThan(1500);
+  });
+
+  it("tens of thousands of rows that never close", () => {
+    const { ms } = read(`<worksheet ${NS}><sheetData>${'<row r="1">'.repeat(150_000)}`);
+    expect(ms).toBeLessThan(1500);
+  });
+
+  it("shared strings full of phonetic hints and text runs that never close", () => {
+    const sheetXml = `<worksheet ${NS}><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c></row></sheetData></worksheet>`;
+    const { ms } = read(sheetXml, [`${"<rPh sb=\"0\" eb=\"1\"><t>".repeat(60_000)}`, `${"<t>".repeat(100_000)}`]);
+    expect(ms).toBeLessThan(1500);
+  });
+
+  it("attribute text of enormous length with quotes that never close", () => {
+    const { ms } = read(`<worksheet ${NS}><sheetData><row r="1"><c r="A1" ${"t=\"".repeat(200_000)}`);
+    expect(ms).toBeLessThan(1500);
+  });
+
+  it("a worksheet whose hyperlinks each claim an enormous area", () => {
+    const links = Array.from({ length: 20_000 }, () => '<hyperlink ref="A1:ZZ99999" r:id="rId1"/>').join("");
+    const { rows, ms } = read(`<worksheet ${NS}><sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>safe</t></is></c></row></sheetData><hyperlinks>${links}</hyperlinks></worksheet>`);
+    expect(ms).toBeLessThan(1500);
+    expect(rows).toEqual([["safe"]]);
+  });
+
+  it("still reads a perfectly normal large sheet quickly", () => {
+    const cells = (r: number) => Array.from({ length: 30 }, (_, c) => `<c r="${String.fromCharCode(65 + (c % 26))}${r}" t="inlineStr"><is><t>value ${r}-${c}</t></is></c>`).join("");
+    const sheetXml = `<worksheet ${NS}><sheetData>${Array.from({ length: 5000 }, (_, i) => `<row r="${i + 1}">${cells(i + 1)}</row>`).join("")}</sheetData></worksheet>`;
+    const { rows, ms } = read(sheetXml);
+    expect(rows).toHaveLength(5000);
+    expect(ms).toBeLessThan(3000);
   });
 });

@@ -116,3 +116,36 @@ skipped:
   recipient just needs to text the sandbox's join code once to opt in).
   `TWILIO_WHATSAPP_TO` accepts a comma-separated list to alert more than
   one person.
+
+## Trade Sales CRM
+
+A prospecting tool for Joanna and Sajad, with pipeline and results visible to Philip: companies and contacts, follow-ups,
+sales opportunities, spreadsheet import and export, an overview and reports, and optional AI help. It is under
+**🤝 Trade Sales CRM** in the dashboard menu.
+
+**Who can do what** — Admin and Manager oversee, Staff work in it, Viewers have no access. Staff can add and edit
+anything and log activity, but cannot delete records, export, undo an import, see the person-by-person comparison, or
+change the settings. Manager can additionally delete, export, undo imports and see the comparison. Admin alone can erase a
+company for good and change the pipeline stages, categories and AI wording. The rules live in `lib/crm/http.ts` and are
+checked for every route by `lib/crm/permissions.test.ts`.
+
+**Setup** — run these in the Supabase SQL editor, in order (each is safe to run twice):
+`20261020100000_trade_crm.sql`, `20261021100000_crm_activities_tasks.sql`, `20261022100000_crm_import.sql`,
+`20261023100000_crm_reports.sql`, `20261024100000_crm_ai.sql`. The CRM tables have row-level security on and no policy,
+so they are reachable only through the server routes (which check the role). Environment variables: `ANTHROPIC_API_KEY`
+(already used elsewhere; only the AI tools need it) and, optionally, `CRM_AI_DAILY_LIMIT` (AI requests per person per day,
+default 40). No other service, key or recurring cost is involved.
+
+**Where the code is** — `lib/crm/` (rules, data access, reports), `lib/crm/import/` (reading and checking spreadsheets),
+`lib/crm/export/`, `lib/crm/ai/` (prompts, website reading, checks on what the AI says), `app/api/crm/` (routes) and
+`app/dashboard/crm/` (screens).
+
+**Things worth knowing** — Imports read `.xlsx`, `.csv`, `.tsv` and `.txt`. Apple Numbers (`.numbers`), old `.xls` and PDF
+files are recognised but must first be exported to Excel or CSV. A company is never changed by an import; anything that
+looks like an existing company is held back for review. A sale counts only when it is marked Won with a value; estimates
+are never counted as sales. Percentages are withheld when there are too few records to mean anything. The AI only
+suggests: nothing is sent, saved or changed without a click, and it never sees a prospect's phone number or email.
+
+**Testing** — `npx vitest run lib/crm` (the whole suite is `npx vitest run`). `lib/crm/acceptance.test.ts` walks through
+the thirteen workflows the CRM was specified against, using the same routes the screens use. The tests use invented data
+only; real lead spreadsheets must never be committed.

@@ -21,7 +21,7 @@ function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      <div className="page-header">
+      <div className="page-header crm-page-header">
         <h1>🤝 Trade Sales CRM</h1>
         <p>Commercial prospects: hotels, facility managers, estate agents, builders and trades. Find them, contact them, follow up, and see what turns into work.</p>
       </div>

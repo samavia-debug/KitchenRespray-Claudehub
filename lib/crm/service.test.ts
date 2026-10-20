@@ -228,6 +228,15 @@ describe("contacts", () => {
     expect(tables.crm_contacts).toHaveLength(2);
   });
 
+  it("does not let a crafted email address change the duplicate check, and still saves the contact", async () => {
+    const id = await company();
+    await createContact({ company_id: id, full_name: "Joe Byrne", email: "joe@aceroofing.ie" }, USER, false);
+    const crafted = await createContact({ company_id: id, full_name: "Someone Else", email: "x@y.ie),email_key.neq.(z" }, USER, false);
+    // Nothing is reported as a duplicate of the real contact, and the contact is saved without error.
+    expect("id" in crafted).toBe(true);
+    expect(tables.crm_contacts).toHaveLength(2);
+  });
+
   it("allows the same name at a different company", async () => {
     const id = await company();
     await createContact({ company_id: id, full_name: "Joe Byrne" }, USER, false);

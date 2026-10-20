@@ -6,6 +6,8 @@ export type Row = Record<string, any>;
 export const fake = {
   tables: {} as Record<string, Row[]>,
   nextId: 1,
+  /** Make new ids look like real UUIDs, for tests that go through routes that check them. */
+  uuidIds: false,
   /** Name a table here and every query against it fails, to test how errors are handled. */
   failTable: null as string | null,
   /** Return a message to make an insert of that row fail. A multi-row insert fails whole, as a real one does. */
@@ -14,11 +16,17 @@ export const fake = {
   reset() {
     for (const k of Object.keys(this.tables)) delete this.tables[k];
     this.nextId = 1;
+    this.uuidIds = false;
     this.failTable = null;
     this.rejectRow = null;
     this.inserts = 0;
   },
 };
+
+function newId(): string {
+  const n = fake.nextId++;
+  return fake.uuidIds ? `00000000-0000-4000-8000-${String(n).padStart(12, "0")}` : `id${n}`;
+}
 
 function split(str: string): string[] {
   const parts: string[] = [];
@@ -97,7 +105,7 @@ function run(q: any): { data?: any; error: { message: string } | null; count?: n
       const message = fake.rejectRow?.(q.table, p);
       if (message) return { error: { message } };
     }
-    const made = payloads.map((p) => ({ id: `id${fake.nextId++}`, created_at: new Date().toISOString(), archived_at: null, ...p }));
+    const made = payloads.map((p) => ({ id: newId(), created_at: new Date().toISOString(), archived_at: null, ...p }));
     rows.push(...made);
     return { data: q.single ? made[0] : made, error: null };
   }

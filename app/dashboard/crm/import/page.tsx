@@ -182,10 +182,10 @@ export default function ImportPage() {
             </p>
             <div className="field" style={{ maxWidth: 420 }}>
               <label>File</label>
-              <input type="file" accept=".xlsx,.csv,.tsv,.txt" disabled={busy !== null} onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0])} />
+              <input type="file" accept=".xlsx,.csv,.tsv,.txt,.numbers" disabled={busy !== null} onChange={(e) => e.target.files?.[0] && readFile(e.target.files[0])} />
               {busy === "reading" && <div style={{ fontSize: "0.8rem", color: "var(--muted)", marginTop: "0.3rem" }}>Reading the file...</div>}
             </div>
-            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Up to 5 MB and 5,000 rows at a time. Old .xls files and PDFs cannot be read: save the sheet as .xlsx or CSV first.</p>
+            <p style={{ margin: 0, fontSize: "0.78rem", color: "var(--muted)" }}>Up to 5 MB and 5,000 rows at a time. Apple Numbers (.numbers), old .xls files and PDFs cannot be read directly: export or save the sheet as Excel (.xlsx) or CSV first. In Numbers that is File, then Export To.</p>
           </>
         )}
 

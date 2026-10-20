@@ -2,11 +2,16 @@ import { openZip, ZipError, type Zip } from "./zip-read";
 
 // Reads the first (or a chosen) sheet of an .xlsx as rows of text. An .xlsx is a ZIP of XML files; the cell values
 // are in the sheet, with text kept in a shared list. Only what an import needs is read: values and hyperlinks.
+//
+// An uploaded file is untrusted, so nothing here may take longer on a hostile file than on a normal one. The XML is
+// scanned in a single pass with indexOf (never a pattern that can run to the end of the file again for every tag it
+// finds), an element that never closes ends the scan, and over-long attribute text is ignored.
 
 export type Workbook = { sheets: string[]; sheetIndex: number; rows: string[][] };
 
 const MAX_COLUMNS = 200;
 const MAX_ROWS_SCANNED = 100_000;
+const MAX_ATTRIBUTE_TEXT = 2000;
 
 const ENTITIES: Record<string, string> = { amp: "&", lt: "<", gt: ">", quot: '"', apos: "'" };
 
@@ -20,9 +25,52 @@ export function decodeXml(s: string): string {
   });
 }
 
-function attr(tag: string, name: string): string | null {
-  const m = new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)')`).exec(tag);
+function attr(attrs: string, name: string): string | null {
+  // No real tag has this much attribute text; refusing it keeps a crafted one from being scanned over and over.
+  if (attrs.length > MAX_ATTRIBUTE_TEXT) return null;
+  const m = new RegExp(`(?:^|\\s)${name}\\s*=\\s*("([^"]*)"|'([^']*)')`).exec(attrs);
   return m ? decodeXml(m[2] ?? m[3] ?? "") : null;
+}
+
+const isBreak = (code: number) => code === 32 || code === 62 || code === 47 || code === 9 || code === 10 || code === 13;
+
+/**
+ * Calls `each(attributes, inner)` for every <tag ...>...</tag> and <tag .../> in `xml`, in one pass. An element that
+ * never closes ends the scan, so a damaged or hostile file costs no more than reading it once.
+ */
+export function elements(xml: string, tag: string, each: (attrs: string, inner: string) => void): void {
+  const open = `<${tag}`;
+  const close = `</${tag}>`;
+  let pos = 0;
+  for (;;) {
+    const start = xml.indexOf(open, pos);
+    if (start === -1) return;
+    const after = start + open.length;
+    // "<c" must not match "<cols" or "<cellXfs".
+    if (after < xml.length && !isBreak(xml.charCodeAt(after))) {
+      pos = after;
+      continue;
+    }
+    const gt = xml.indexOf(">", after);
+    if (gt === -1) return;
+    if (xml.charCodeAt(gt - 1) === 47) {
+      each(xml.slice(after, gt - 1), "");
+      pos = gt + 1;
+      continue;
+    }
+    const end = xml.indexOf(close, gt);
+    if (end === -1) return;
+    each(xml.slice(after, gt), xml.slice(gt + 1, end));
+    pos = end + close.length;
+  }
+}
+
+/** The text between the first `open` and the next `close`, or "" when either is missing. */
+function between(s: string, open: string, close: string): string {
+  const i = s.indexOf(open);
+  if (i === -1) return "";
+  const j = s.indexOf(close, i + open.length);
+  return j === -1 ? "" : s.slice(i + open.length, j);
 }
 
 /** "A" -> 0, "Z" -> 25, "AA" -> 26. */
@@ -39,22 +87,35 @@ function cellRef(ref: string): { col: number; row: number } | null {
 
 /** The text of a string element: every text run joined, skipping phonetic hints. */
 function textOf(xml: string): string {
-  const clean = xml.replace(/<rPh\b[\s\S]*?<\/rPh>/g, "");
   let out = "";
-  const re = /<t\b[^>]*?(?:\/>|>([\s\S]*?)<\/t>)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(clean))) out += decodeXml(m[1] ?? "");
+  let pos = 0;
+  while (pos < xml.length) {
+    const lt = xml.indexOf("<", pos);
+    if (lt === -1) break;
+    const tag = xml.startsWith("<rPh", lt) ? "rPh" : xml.startsWith("<t", lt) ? "t" : "";
+    if (!tag || !isBreak(xml.charCodeAt(lt + 1 + tag.length))) {
+      pos = lt + 1;
+      continue;
+    }
+    const gt = xml.indexOf(">", lt);
+    if (gt === -1) break;
+    if (xml.charCodeAt(gt - 1) === 47) {
+      pos = gt + 1;
+      continue;
+    }
+    const end = xml.indexOf(`</${tag}>`, gt);
+    if (end === -1) break;
+    if (tag === "t") out += decodeXml(xml.slice(gt + 1, end));
+    pos = end + tag.length + 3;
+  }
   return out;
 }
 
 function sharedStrings(zip: Zip): string[] {
   const buf = zip.read("xl/sharedStrings.xml");
   if (!buf) return [];
-  const xml = buf.toString("utf8");
   const out: string[] = [];
-  const re = /<si\b[^>]*?(?:\/>|>([\s\S]*?)<\/si>)/g;
-  let m: RegExpExecArray | null;
-  while ((m = re.exec(xml))) out.push(textOf(m[1] ?? ""));
+  elements(buf.toString("utf8"), "si", (_a, inner) => out.push(textOf(inner)));
   return out;
 }
 
@@ -62,11 +123,11 @@ function relationships(zip: Zip, path: string): Map<string, string> {
   const map = new Map<string, string>();
   const buf = zip.read(path);
   if (!buf) return map;
-  for (const tag of buf.toString("utf8").match(/<Relationship\b[^>]*>/g) ?? []) {
-    const id = attr(tag, "Id");
-    const target = attr(tag, "Target");
+  elements(buf.toString("utf8"), "Relationship", (attrs) => {
+    const id = attr(attrs, "Id");
+    const target = attr(attrs, "Target");
     if (id && target) map.set(id, target);
-  }
+  });
   return map;
 }
 
@@ -96,12 +157,12 @@ export function readXlsx(buf: Buffer, wantedSheet = 0): Workbook {
 
   const rels = relationships(zip, "xl/_rels/workbook.xml.rels");
   const sheets: { name: string; path: string }[] = [];
-  for (const tag of workbookXml.toString("utf8").match(/<sheet\b[^>]*>/g) ?? []) {
-    const name = attr(tag, "name");
-    const rid = attr(tag, "r:id") ?? attr(tag, "id");
+  elements(workbookXml.toString("utf8"), "sheet", (attrs) => {
+    const name = attr(attrs, "name");
+    const rid = attr(attrs, "r:id") ?? attr(attrs, "id");
     const target = rid ? rels.get(rid) : null;
     if (name && target) sheets.push({ name, path: resolve("xl/workbook.xml", target) });
-  }
+  });
   if (sheets.length === 0) throw new ZipError("This Excel file has no sheets.");
 
   const index = Number.isInteger(wantedSheet) && wantedSheet >= 0 && wantedSheet < sheets.length ? wantedSheet : 0;
@@ -114,54 +175,49 @@ export function readXlsx(buf: Buffer, wantedSheet = 0): Workbook {
   // Hyperlinks: the link's target, for cells such as a "View on Maps" label that hides the real address.
   const links = new Map<string, string>();
   const sheetRels = relationships(zip, resolve(sheet.path, `_rels/${sheet.path.split("/").pop()}.rels`));
-  for (const tag of xml.match(/<hyperlink\b[^>]*>/g) ?? []) {
-    const rid = attr(tag, "r:id") ?? attr(tag, "id");
-    const ref = attr(tag, "ref");
+  elements(xml, "hyperlink", (attrs) => {
+    const rid = attr(attrs, "r:id") ?? attr(attrs, "id");
+    const ref = attr(attrs, "ref");
     const target = rid ? sheetRels.get(rid) : null;
-    if (!ref || !target || !/^(https?:|mailto:)/i.test(target)) continue;
+    if (!ref || !target || !/^(https?:|mailto:)/i.test(target)) return;
     const [from, to] = ref.split(":");
     const a = cellRef(from);
     const b = cellRef(to ?? from);
-    if (!a || !b || (b.row - a.row + 1) * (b.col - a.col + 1) > 5000) continue;
+    if (!a || !b || (b.row - a.row + 1) * (b.col - a.col + 1) > 5000) return;
     for (let r = a.row; r <= b.row; r++) for (let c = a.col; c <= b.col; c++) links.set(`${c},${r}`, target.replace(/^mailto:/i, ""));
-  }
+  });
 
   const grid: Map<number, string>[] = [];
   let nextRow = 0;
-  const rowRe = /<row\b([^>]*?)(?:\/>|>([\s\S]*?)<\/row>)/g;
-  let rm: RegExpExecArray | null;
-  while ((rm = rowRe.exec(xml))) {
-    const rowAttr = attr(rm[1], "r");
+  elements(xml, "row", (rowAttrs, rowXml) => {
+    const rowAttr = attr(rowAttrs, "r");
     const r = rowAttr ? parseInt(rowAttr, 10) - 1 : nextRow;
     nextRow = r + 1;
-    if (r < 0 || r > MAX_ROWS_SCANNED) continue;
+    if (r < 0 || r > MAX_ROWS_SCANNED) return;
     const cells = new Map<number, string>();
     let nextCol = 0;
-    const cellRe = /<c\b([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g;
-    let cm: RegExpExecArray | null;
-    while ((cm = cellRe.exec(rm[2] ?? ""))) {
-      const ref = attr(cm[1], "r");
+    elements(rowXml, "c", (cellAttrs, body) => {
+      const ref = attr(cellAttrs, "r");
       const pos = ref ? cellRef(ref) : null;
       const c = pos ? pos.col : nextCol;
       nextCol = c + 1;
-      if (c < 0 || c >= MAX_COLUMNS) continue;
+      if (c < 0 || c >= MAX_COLUMNS) return;
 
-      const type = attr(cm[1], "t");
-      const body = cm[2] ?? "";
+      const type = attr(cellAttrs, "t");
       let value = "";
-      if (type === "s") value = strings[parseInt(/<v>([\s\S]*?)<\/v>/.exec(body)?.[1] ?? "", 10)] ?? "";
-      else if (type === "inlineStr") value = textOf(/<is>([\s\S]*?)<\/is>/.exec(body)?.[1] ?? "");
-      else if (type === "str" || type === "d") value = decodeXml(/<v>([\s\S]*?)<\/v>/.exec(body)?.[1] ?? "");
-      else if (type === "b") value = /<v>\s*1\s*<\/v>/.test(body) ? "TRUE" : "FALSE";
+      if (type === "s") value = strings[parseInt(between(body, "<v>", "</v>"), 10)] ?? "";
+      else if (type === "inlineStr") value = textOf(between(body, "<is>", "</is>"));
+      else if (type === "str" || type === "d") value = decodeXml(between(body, "<v>", "</v>"));
+      else if (type === "b") value = between(body, "<v>", "</v>").trim() === "1" ? "TRUE" : "FALSE";
       else if (type === "e") value = "";
-      else value = plainNumber(decodeXml(/<v>([\s\S]*?)<\/v>/.exec(body)?.[1] ?? ""));
+      else value = plainNumber(decodeXml(between(body, "<v>", "</v>")));
 
       const link = links.get(`${c},${r}`);
       if (link) value = link;
       if (value !== "") cells.set(c, value);
-    }
+    });
     if (cells.size) grid[r] = cells;
-  }
+  });
 
   let width = 0;
   for (const row of grid) if (row) for (const c of Array.from(row.keys())) width = Math.max(width, c + 1);

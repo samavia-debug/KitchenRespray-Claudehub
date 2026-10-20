@@ -251,36 +251,102 @@ export type PageFacts = { title: string; description: string; text: string; emai
 const SOCIAL = /^https?:\/\/(?:www\.)?(?:facebook\.com|instagram\.com|linkedin\.com|twitter\.com|x\.com|youtube\.com|tiktok\.com)\//i;
 const NOT_AN_EMAIL = /\.(png|jpe?g|gif|webp|svg|css|js)$|@\d+x\./i;
 
+/** Parts of a page that are not for reading: their contents are dropped whole. */
+const SKIP = new Set(["script", "style", "noscript", "svg", "template", "iframe"]);
+const BLOCK = new Set(["p", "div", "li", "ul", "ol", "h1", "h2", "h3", "h4", "h5", "h6", "tr", "section", "article", "header", "footer", "br", "table", "main", "nav", "form"]);
+const MAX_TAG_TEXT = 2000;
+const MAX_HTML = 1_500_000;
+
 const attrOf = (tag: string, name: string) => {
+  // No real tag has this much attribute text; refusing it keeps a crafted one from being scanned over and over.
+  if (tag.length > MAX_TAG_TEXT) return null;
   const m = new RegExp(`\\b${name}\\s*=\\s*("([^"]*)"|'([^']*)')`, "i").exec(tag);
   return m ? decodeHtml(m[2] ?? m[3] ?? "") : null;
 };
 
 const unique = <T,>(xs: T[]) => Array.from(new Set(xs));
+const isLetter = (c: number) => (c >= 65 && c <= 90) || (c >= 97 && c <= 122);
 
 /**
  * The readable text of a page, with its title and description, and the contact details and social links it shows.
  * The contact details are found here by pattern, not by the AI, so none can be invented.
+ *
+ * A page comes from a website we do not control, so it is read in one pass and never with a pattern that can run to the
+ * end of the page again for every tag: a page full of tags that never close costs no more than a normal one. A tag
+ * that never ends, or a block that never closes, simply ends the reading.
  */
 export function extractPage(html: string): PageFacts {
-  const title = decodeHtml(/<title[^>]*>([\s\S]*?)<\/title>/i.exec(html)?.[1] ?? "").replace(/\s+/g, " ").trim().slice(0, 200);
+  const src = html.length > MAX_HTML ? html.slice(0, MAX_HTML) : html;
+  const lower = src.toLowerCase();
+  const hrefs: string[] = [];
+  let title = "";
   let description = "";
-  for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
-    const name = (attrOf(tag, "name") ?? attrOf(tag, "property") ?? "").toLowerCase();
-    if (name === "description" || name === "og:description") {
-      description = (attrOf(tag, "content") ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
-      if (description) break;
+  let body = "";
+
+  let pos = 0;
+  while (pos < src.length) {
+    const lt = src.indexOf("<", pos);
+    if (lt === -1) {
+      body += src.slice(pos);
+      break;
     }
+    body += src.slice(pos, lt);
+
+    if (lower.startsWith("<!--", lt)) {
+      const end = lower.indexOf("-->", lt + 4);
+      pos = end === -1 ? src.length : end + 3;
+      body += " ";
+      continue;
+    }
+
+    const closing = src.charCodeAt(lt + 1) === 47;
+    let nameEnd = lt + (closing ? 2 : 1);
+    if (!isLetter(src.charCodeAt(nameEnd))) {
+      body += "<"; // not a tag, just a less-than sign
+      pos = lt + 1;
+      continue;
+    }
+    while (nameEnd < src.length && /[a-z0-9]/i.test(src[nameEnd])) nameEnd++;
+    const name = lower.slice(lt + (closing ? 2 : 1), nameEnd);
+
+    const gt = src.indexOf(">", nameEnd);
+    if (gt === -1) break; // a tag that never ends: nothing after it can be read
+    const tag = src.slice(lt, gt + 1);
+
+    if (!closing && SKIP.has(name)) {
+      const end = lower.indexOf(`</${name}`, gt);
+      if (end === -1) break; // a block that never closes swallows the rest of the page
+      const endGt = lower.indexOf(">", end);
+      pos = endGt === -1 ? src.length : endGt + 1;
+      body += " ";
+      continue;
+    }
+
+    if (!closing && name === "title") {
+      const end = lower.indexOf("</title", gt);
+      if (end === -1) break;
+      if (!title) title = decodeHtml(src.slice(gt + 1, end)).replace(/\s+/g, " ").trim().slice(0, 200);
+      const endGt = lower.indexOf(">", end);
+      pos = endGt === -1 ? src.length : endGt + 1;
+      continue;
+    }
+
+    if (!closing && name === "meta" && !description) {
+      const label = (attrOf(tag, "name") ?? attrOf(tag, "property") ?? "").toLowerCase();
+      if (label === "description" || label === "og:description") description = (attrOf(tag, "content") ?? "").replace(/\s+/g, " ").trim().slice(0, 400);
+    }
+
+    if (!closing && name === "a") {
+      const href = attrOf(tag, "href");
+      if (href) hrefs.push(href);
+    }
+
+    body += BLOCK.has(name) ? "\n" : " ";
+    pos = gt + 1;
   }
 
-  const hrefs = (html.match(/<a\b[^>]*>/gi) ?? []).map((t) => attrOf(t, "href")).filter((h): h is string => !!h);
-  const body = html
-    .replace(/<!--[\s\S]*?-->/g, " ")
-    .replace(/<(script|style|noscript|svg|template|iframe|head)\b[\s\S]*?<\/\1>/gi, " ")
-    .replace(/<\/(p|div|li|h[1-6]|tr|section|article|header|footer|br)\s*>|<br\s*\/?>/gi, "\n")
-    .replace(/<[^>]+>/g, " ");
   const text = decodeHtml(body)
-    .replace(/[ \t\f\v ]+/g, " ")
+    .replace(/[ \t\f\v\u00a0]+/g, " ")
     .replace(/ ?\n ?/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim()
@@ -295,10 +361,10 @@ export function extractPage(html: string): PageFacts {
       .filter((e) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e) && !NOT_AN_EMAIL.test(e))
   ).slice(0, 5);
 
-  const digits = (s: string) => s.replace(/\D/g, "").length;
+  const digits = (v: string) => v.replace(/\D/g, "").length;
   const phones = unique(
     [
-      ...hrefs.filter((h) => /^tel:/i.test(h)).map((h) => decodeURIComponent(h.replace(/^tel:/i, "")).trim()),
+      ...hrefs.filter((h) => /^tel:/i.test(h)).map((h) => safeDecode(h.replace(/^tel:/i, "")).trim()),
       // In running text only numbers that start like a phone number (a + or a 0), so years and prices are not picked up.
       // The character before must not be a letter, digit or +, so the "0" inside "2026" does not start a number.
       ...Array.from(text.matchAll(/(^|[^\w+])((?:\+|00|\(?0)[\d\s().\-]{6,16}\d)/g)).map((m) => m[2]),
@@ -309,4 +375,13 @@ export function extractPage(html: string): PageFacts {
 
   const social = unique(hrefs.filter((h) => SOCIAL.test(h)).map((h) => h.split("#")[0])).slice(0, 6);
   return { title, description, text, emails, phones, social };
+}
+
+/** decodeURIComponent, but a badly encoded address is kept as written instead of throwing. */
+function safeDecode(v: string): string {
+  try {
+    return decodeURIComponent(v);
+  } catch {
+    return v;
+  }
 }

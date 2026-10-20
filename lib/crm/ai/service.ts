@@ -7,6 +7,7 @@ import { phoneKey } from "../normalize";
 import { dublinDayStart, resolveRange, type ResolvedRange } from "../report-range";
 import { loadReportData } from "../report-service";
 import { getCompany, logEvent, type Db } from "../service";
+import { PublicError } from "../errors";
 import { buildSalesPack, draftFacts, nextStepFacts, ourCompanyFacts, researchRecord, type AiSettings } from "./facts";
 import {
   ASK_SYSTEM,
@@ -44,7 +45,7 @@ export async function getAiSettings(db: Db = createServiceClient()): Promise<AiS
 export async function saveAiSettings(values: AiSettings, userId: string): Promise<void> {
   const db = createServiceClient();
   const { error } = await db.from("crm_ai_settings").upsert({ id: 1, ...values, updated_by: userId, updated_at: new Date().toISOString() }, { onConflict: "id" });
-  if (error) throw new Error(`Could not save the settings: ${error.message}`);
+  if (error) throw new PublicError("Could not save the settings", error.message);
   await logEvent(db, userId, "ai_settings_saved", "ai", null, {});
 }
 
@@ -52,7 +53,7 @@ export async function saveAiSettings(values: AiSettings, userId: string): Promis
 
 async function used(db: Db, userId: string): Promise<number> {
   const { count, error } = await db.from("crm_events").select("id", { count: "exact", head: true }).eq("action", "ai_request").eq("user_id", userId).gte("created_at", dublinDayStart(dublinToday()));
-  if (error) throw new Error(`Could not check today's allowance: ${error.message}`);
+  if (error) throw new PublicError("Could not check today's allowance", error.message);
   return count ?? 0;
 }
 
