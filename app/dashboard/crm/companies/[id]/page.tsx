@@ -12,6 +12,9 @@ import ContactForm, { changedContactFields, EMPTY_CONTACT, toContactValues } fro
 import { useCrm } from "../../crm-context";
 import { FOLLOW_UP_COLOR, fmtDate, fmtDateTime, fmtMoney, followUpState, personName, whatsappLink } from "../../fmt";
 import StageDialog from "../../stage-dialog";
+import ActivitySection from "../../activity-section";
+import OpportunitiesSection from "../../opportunities-section";
+import TasksSection from "../../tasks-section";
 
 function Detail({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -56,6 +59,8 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
   const [addingContact, setAddingContact] = useState(false);
   const [editingContact, setEditingContact] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // Bumped whenever a card on the page changes something the other cards show.
+  const [refresh, setRefresh] = useState(0);
 
   const load = useCallback(async () => {
     const res = await api(`/api/crm/companies/${params.id}`);
@@ -70,6 +75,11 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  const changed = () => {
+    load();
+    setRefresh((r) => r + 1);
+  };
 
   if (notFound) {
     return (
@@ -168,6 +178,9 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
         {note && <p style={{ margin: "0.6rem 0 0", fontSize: "0.85rem" }}>{note}</p>}
       </div>
 
+      <TasksSection companyId={params.id} contacts={contacts.map((c) => ({ id: c.id, full_name: c.full_name }))} onChanged={changed} refreshKey={refresh} />
+      <ActivitySection companyId={params.id} contacts={contacts.map((c) => ({ id: c.id, full_name: c.full_name }))} onChanged={changed} refreshKey={refresh} />
+
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "0.9rem" }}>
           <h2 style={{ margin: 0 }}>Company details</h2>
@@ -216,6 +229,7 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
                 )}
               </Detail>
               <Detail label="Last contacted">{company.last_contacted_at ? fmtDate(company.last_contacted_at) : "Not yet"}</Detail>
+              <Detail label="Last activity">{company.last_activity_type ? `${company.last_activity_type}, ${fmtDate(company.last_activity_at)}` : "None recorded"}</Detail>
               <Detail label="Added">{fmtDate(company.created_at)}</Detail>
               {company.outcome_note && (
                 <div className="wide-field">
@@ -314,6 +328,8 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
           )
         )}
       </div>
+
+      <OpportunitiesSection companyId={params.id} onChanged={load} />
 
       <div className="card">
         <h2>Pipeline history</h2>

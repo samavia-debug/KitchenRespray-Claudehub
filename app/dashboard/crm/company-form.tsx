@@ -24,13 +24,12 @@ export type CompanyFormValues = {
   source: string;
   priority: string;
   assigned_to: string;
-  next_follow_up: string;
   notes: string;
 };
 
 export const EMPTY_COMPANY: CompanyFormValues = {
   name: "", category_id: "", website: "", phone: "", email: "", address: "", city: "", county: "", postcode: "", country: "Ireland",
-  description: "", services: "", estimated_value: "", source: "", priority: "Medium", assigned_to: "", next_follow_up: "", notes: "",
+  description: "", services: "", estimated_value: "", source: "", priority: "Medium", assigned_to: "", notes: "",
 };
 
 /** The form values for a company already saved (nulls become empty text so inputs stay controlled). */
@@ -157,7 +156,6 @@ export default function CompanyForm({
             ))}
           </select>
         </div>
-        {input("next_follow_up", "Next follow-up date", { type: "date" })}
         <div className="field wide-field">
           <label>Notes</label>
           <textarea rows={3} value={v.notes} onChange={set("notes")} maxLength={4000} />

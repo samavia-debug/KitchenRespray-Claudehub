@@ -1,120 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fake, fakeFrom } from "./fake-db";
 
-// ---- A small in-memory stand-in for the database: enough of the query builder for the CRM service ----
-type Row = Record<string, any>;
-const tables: Record<string, Row[]> = {};
-let nextId = 1;
-let failTable: string | null = null;
+// The database is the shared in-memory stand-in in fake-db.ts.
+vi.mock("@/lib/supabase/service", () => ({ createServiceClient: () => ({ from: fakeFrom }) }));
+const tables = fake.tables;
 
-function split(str: string): string[] {
-  const parts: string[] = [];
-  let depth = 0;
-  let cur = "";
-  for (const ch of str) {
-    if (ch === "(") depth++;
-    if (ch === ")") depth--;
-    if (ch === "," && depth === 0) {
-      parts.push(cur);
-      cur = "";
-    } else cur += ch;
-  }
-  if (cur) parts.push(cur);
-  return parts;
-}
-
-const likeToRegex = (pat: string, flags = "") => new RegExp(`^${pat.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*")}$`, flags);
-
-function test(row: Row, clause: string): boolean {
-  if (clause.startsWith("and(")) return split(clause.slice(4, -1)).every((c) => test(row, c));
-  const first = clause.indexOf(".");
-  const second = clause.indexOf(".", first + 1);
-  const col = clause.slice(0, first);
-  const op = clause.slice(first + 1, second);
-  const value = clause.slice(second + 1);
-  const v = row[col];
-  switch (op) {
-    case "eq": return String(v) === value;
-    case "is": return value === "null" ? v === null || v === undefined : v !== null && v !== undefined;
-    case "in": return value.slice(1, -1).split(",").includes(String(v));
-    case "lt": return v !== null && v !== undefined && String(v) < value;
-    case "like": return typeof v === "string" && likeToRegex(value).test(v);
-    case "ilike": return typeof v === "string" && likeToRegex(value, "i").test(v);
-  }
-  throw new Error(`fake db: unsupported filter ${clause}`);
-}
-
-function run(q: any): { data?: any; error: { message: string } | null; count?: number } {
-  if (failTable === q.table) return { error: { message: `${q.table} unavailable` } };
-  const rows = (tables[q.table] ||= []);
-  const matches = (r: Row) => q.preds.every((p: (r: Row) => boolean) => p(r));
-
-  if (q.op === "insert") {
-    const row = { id: `id${nextId++}`, created_at: new Date().toISOString(), archived_at: null, ...q.payload };
-    rows.push(row);
-    return { data: q.single ? row : [row], error: null };
-  }
-  if (q.op === "update") {
-    const hit = rows.filter(matches);
-    hit.forEach((r) => Object.assign(r, q.payload));
-    return { data: hit.map((r) => ({ ...r })), error: null };
-  }
-  if (q.op === "delete") {
-    const hit = rows.filter(matches);
-    tables[q.table] = rows.filter((r) => !hit.includes(r));
-    return { data: hit, error: null };
-  }
-
-  let out = rows.filter(matches).map((r) => ({ ...r }));
-  const total = out.length;
-  if (q.order.length) {
-    out.sort((a, b) => {
-      for (const [col, asc] of q.order) {
-        const x = a[col] ?? null;
-        const y = b[col] ?? null;
-        if (x === y) continue;
-        if (x === null) return 1;
-        if (y === null) return -1;
-        return (x < y ? -1 : 1) * (asc ? 1 : -1);
-      }
-      return 0;
-    });
-  }
-  if (q.range) out = out.slice(q.range[0], q.range[1] + 1);
-  if (q.limit !== undefined) out = out.slice(0, q.limit);
-  if (q.head) return { error: null, count: total };
-  if (q.maybe) return { data: out[0] ?? null, error: null, count: total };
-  return { data: out, error: null, count: total };
-}
-
-function from(table: string) {
-  const q: any = { table, op: "select", preds: [], order: [] };
-  const api: any = {
-    select(_c?: string, opts?: any) {
-      q.head = opts?.head;
-      return api;
-    },
-    insert(p: any) { q.op = "insert"; q.payload = p; return api; },
-    update(p: any) { q.op = "update"; q.payload = p; return api; },
-    delete() { q.op = "delete"; return api; },
-    eq(c: string, v: any) { q.preds.push((r: Row) => r[c] === v); return api; },
-    neq(c: string, v: any) { q.preds.push((r: Row) => r[c] !== v); return api; },
-    is(c: string, v: any) { q.preds.push((r: Row) => (v === null ? r[c] === null || r[c] === undefined : r[c] === v)); return api; },
-    in(c: string, vs: any[]) { q.preds.push((r: Row) => vs.includes(r[c])); return api; },
-    ilike(c: string, p: string) { q.preds.push((r: Row) => typeof r[c] === "string" && likeToRegex(p, "i").test(r[c])); return api; },
-    gte(c: string, v: any) { q.preds.push((r: Row) => r[c] !== null && r[c] !== undefined && r[c] >= v); return api; },
-    lte(c: string, v: any) { q.preds.push((r: Row) => r[c] !== null && r[c] !== undefined && r[c] <= v); return api; },
-    or(s: string) { q.preds.push((r: Row) => split(s).some((c) => test(r, c))); return api; },
-    order(c: string, o?: { ascending?: boolean }) { q.order.push([c, o?.ascending !== false]); return api; },
-    range(a: number, b: number) { q.range = [a, b]; return api; },
-    limit(n: number) { q.limit = n; return api; },
-    maybeSingle() { q.maybe = true; return api; },
-    single() { q.single = true; q.maybe = true; return api; },
-    then(res: any, rej: any) { return Promise.resolve(run(q)).then(res, rej); },
-  };
-  return api;
-}
-
-vi.mock("@/lib/supabase/service", () => ({ createServiceClient: () => ({ from }) }));
 
 import { archiveCompany, bulkUpdate, changeStage, createCompany, createContact, deleteContact, getCompany, listCompanies, pipelineSummary, saveStage, updateCompany, updateContact } from "./service";
 import { cleanCompanyQuery } from "./validate";
@@ -129,9 +19,7 @@ const USER = "user-joanna";
 const query = (qs = "") => cleanCompanyQuery(new URLSearchParams(qs));
 
 beforeEach(() => {
-  for (const k of Object.keys(tables)) delete tables[k];
-  nextId = 1;
-  failTable = null;
+  fake.reset();
   tables.crm_stages = STAGES.map(([name, kind], i) => ({ id: `stage-${name}`, name, kind, sort_order: i + 1, active: true }));
   tables.crm_categories = [{ id: "cat-builders", name: "Builders", sort_order: 1, active: true }];
   tables.profiles = [
@@ -285,7 +173,7 @@ describe("bulkUpdate", () => {
 describe("listCompanies", () => {
   beforeEach(async () => {
     await createCompany({ name: "Ace Roofing", city: "Dublin", phone: "087 123 4567", priority: "High" }, USER, false);
-    await createCompany({ name: "Beta Builders", city: "Bray", assigned_to: "user-sajad", next_follow_up: "2026-11-01" }, USER, false);
+    await createCompany({ name: "Beta Builders", city: "Bray", assigned_to: "user-sajad" }, USER, false);
     await createCompany({ name: "Cork Carpentry", city: "Cork", estimated_value: 5000 }, USER, false);
     await createContact({ company_id: tables.crm_companies[2].id, full_name: "Mary Murphy", job_title: "Owner" }, USER, false);
   });
@@ -417,7 +305,7 @@ describe("saveStage", () => {
 
 describe("database trouble", () => {
   it("surfaces a failure instead of pretending a company was saved", async () => {
-    failTable = "crm_companies";
+    fake.failTable = "crm_companies";
     await expect(createCompany({ name: "Ace" }, USER, false)).rejects.toThrow(/crm_companies unavailable/);
   });
 });

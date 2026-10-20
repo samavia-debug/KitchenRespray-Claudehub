@@ -6,6 +6,7 @@ import { CrmProvider, useCrm } from "./crm-context";
 
 const LINKS = [
   { href: "/dashboard/crm/companies", label: "Companies" },
+  { href: "/dashboard/crm/follow-ups", label: "Follow-ups" },
   { href: "/dashboard/crm/contacts", label: "Contacts" },
   { href: "/dashboard/crm/pipeline", label: "Sales Pipeline" },
   { href: "/dashboard/crm/settings", label: "Settings", adminOnly: true },

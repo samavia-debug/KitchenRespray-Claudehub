@@ -4,15 +4,15 @@ import { companyKeys, contactKeys, matchCompanies, matchContacts, type CompanyKe
 import { CLOSING_KINDS, type Assignee, type Category, type Company, type CompanyFields, type CompanyQuery, type Contact, type ContactDuplicateMatch, type ContactFields, type DuplicateMatch, type Stage } from "./types";
 import type { BulkChange, StageChange } from "./validate";
 
-type Db = ReturnType<typeof createServiceClient>;
+export type Db = ReturnType<typeof createServiceClient>;
 
-const STAFF_ROLES = ["Admin", "Manager", "Staff"];
+export const STAFF_ROLES = ["Admin", "Manager", "Staff"];
 
 // The related names come along with each company, so lists and profiles need no second request.
 const COMPANY_SELECT =
   "*, category:crm_categories(name), stage:crm_stages(name, kind), assignee:profiles!assigned_to(email), contacts:crm_contacts(count)";
 
-function fail(error: { message: string } | null | undefined, what: string): never {
+export function fail(error: { message: string } | null | undefined, what: string): never {
   throw new Error(`${what}: ${error?.message ?? "unknown error"}`);
 }
 
@@ -41,12 +41,12 @@ function flatten(row: any): CompanyRow {
  * The time to stamp a save with. Always later than the previous stamp, so two saves can never share one and the
  * "has someone saved since I opened this" check cannot miss a change.
  */
-function nextStamp(previous?: string | null): string {
+export function nextStamp(previous?: string | null): string {
   const prev = previous ? Date.parse(previous) : 0;
   return new Date(Math.max(Date.now(), (Number.isFinite(prev) ? prev : 0) + 1)).toISOString();
 }
 
-async function logEvent(db: Db, userId: string, action: string, entity: string, entityId: string | null, meta: Record<string, unknown> = {}) {
+export async function logEvent(db: Db, userId: string, action: string, entity: string, entityId: string | null, meta: Record<string, unknown> = {}) {
   // The trail must never stop the change it describes, and holds only field names and counts.
   await db.from("crm_events").insert({ user_id: userId, action, entity, entity_id: entityId, meta });
 }

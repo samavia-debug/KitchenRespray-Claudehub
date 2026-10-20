@@ -72,8 +72,8 @@ describe("cleanCompanyInput", () => {
   });
 
   it("cleans every field and turns blanks into null", () => {
-    const r = cleanCompanyInput({ name: "Ace", website: "aceroofing.ie", email: " INFO@Ace.IE ", phone: "+353 1 555 0100", city: "", estimated_value: "€12,500.555", next_follow_up: "2026-11-02", category_id: ID });
-    expect("value" in r && r.value).toMatchObject({ website: "https://aceroofing.ie", email: "info@ace.ie", city: null, estimated_value: 12500.56, next_follow_up: "2026-11-02", category_id: ID });
+    const r = cleanCompanyInput({ name: "Ace", website: "aceroofing.ie", email: " INFO@Ace.IE ", phone: "+353 1 555 0100", city: "", estimated_value: "€12,500.555", category_id: ID });
+    expect("value" in r && r.value).toMatchObject({ website: "https://aceroofing.ie", email: "info@ace.ie", city: null, estimated_value: 12500.56, category_id: ID });
   });
 
   it("rejects bad values with a clear message", () => {
@@ -87,7 +87,6 @@ describe("cleanCompanyInput", () => {
     expect(bad({ estimated_value: -5 })).toMatch(/amount/i);
     expect(bad({ estimated_value: "lots" })).toMatch(/amount/i);
     expect(bad({ priority: "Urgent" })).toMatch(/choices/i);
-    expect(bad({ next_follow_up: "2026-02-31" })).toMatch(/date/i);
     expect(bad({ category_id: "x" })).toMatch(/not valid/i);
     expect(bad({ notes: "x".repeat(4001) })).toMatch(/too long/i);
     expect(bad({ name: 42 })).toMatch(/text/i);

@@ -1,6 +1,18 @@
+import { dublinToday } from "./followups";
 import { cleanWebsite, searchTerm } from "./normalize";
 import {
+  ACTIVITY_TYPES,
   CONTACT_METHODS,
+  FOLLOW_UP_VIEWS,
+  OPPORTUNITY_SOURCES,
+  OPPORTUNITY_STATUSES,
+  type ActivityFields,
+  type ActivityType,
+  type FollowUpView,
+  type OpportunityFields,
+  type OpportunitySource,
+  type OpportunityStatus,
+  type TaskFields,
   PRIORITIES,
   SORT_FIELDS,
   type CompanyFields,
@@ -132,7 +144,6 @@ export function cleanCompanyInput(input: unknown, partial = false): Cleaned<Part
       source: text(raw, "source", "Source", 120),
       priority,
       assigned_to: uuidOrNull(raw, "assigned_to", "Assigned staff member"),
-      next_follow_up: dateOrNull(raw, "next_follow_up", "Next follow-up date"),
       notes: text(raw, "notes", "Notes", 4000),
     });
 
@@ -172,7 +183,6 @@ export function cleanContactInput(input: unknown, partial = false): Cleaned<Part
       preferred_method: method,
       source: text(raw, "source", "Source", 120),
       notes: text(raw, "notes", "Notes", 4000),
-      next_follow_up: dateOrNull(raw, "next_follow_up", "Next follow-up date"),
       assigned_to: uuidOrNull(raw, "assigned_to", "Assigned staff member"),
     });
     return { value };
@@ -260,5 +270,169 @@ export function cleanCompanyQuery(params: URLSearchParams): CompanyQuery {
     pageSize: intIn(params.get("pageSize"), 1, 100, 25),
     sort: (SORT_FIELDS as readonly string[]).includes(sort) ? sort : "name",
     dir: params.get("dir") === "desc" ? "desc" : "asc",
+  };
+}
+
+// ---------- activities, follow-ups and opportunities (phase 3) ----------
+
+/** A follow-up cannot be set for a day that has already passed: that is nearly always a typo. */
+function futureDateOrNull(raw: Raw, key: string, label: string): string | null | undefined {
+  const v = dateOrNull(raw, key, label);
+  if (typeof v === "string" && v < dublinToday()) throw new Error(`${label} cannot be in the past`);
+  return v;
+}
+
+/** When something happened: a date or date and time, never in the future (an activity is something already done). */
+function pastTimeOrNull(raw: Raw, key: string, label: string): string | null | undefined {
+  if (!(key in raw)) return undefined;
+  const v = raw[key];
+  if (v === null || v === undefined || v === "") return null;
+  const t = typeof v === "string" ? new Date(v) : new Date(NaN);
+  if (Number.isNaN(t.getTime())) throw new Error(`${label} must be a date and time`);
+  // A little slack for clocks that are a minute or two apart.
+  if (t.getTime() > Date.now() + 5 * 60_000) throw new Error(`${label} cannot be in the future. Record it once it has happened.`);
+  return t.toISOString();
+}
+
+export type CleanActivity = Partial<ActivityFields> & { company_id: string; type: ActivityType };
+
+export function cleanActivityInput(input: unknown): Cleaned<CleanActivity> {
+  const raw = asObject(input);
+  if (!raw) return { error: "Nothing was sent" };
+  try {
+    const company_id = uuidOrNull(raw, "company_id", "Company");
+    if (!company_id) throw new Error("Choose a company");
+    const type = pick<ActivityType>([...ACTIVITY_TYPES], raw, "type", "Activity type");
+    if (!type) throw new Error("Choose what you did");
+
+    const value = defined({
+      contact_id: uuidOrNull(raw, "contact_id", "Contact"),
+      occurred_at: pastTimeOrNull(raw, "occurred_at", "When it happened"),
+      user_id: uuidOrNull(raw, "user_id", "Staff member"),
+      outcome: text(raw, "outcome", "Outcome", 1000),
+      notes: text(raw, "notes", "Notes", 4000),
+      next_action: text(raw, "next_action", "Next action", 300),
+      next_follow_up: futureDateOrNull(raw, "next_follow_up", "Follow-up date"),
+    });
+    return { value: { ...value, company_id, type } };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+}
+
+export function cleanTaskInput(input: unknown, partial = false): Cleaned<Partial<TaskFields>> {
+  const raw = asObject(input);
+  if (!raw) return { error: "Nothing was sent" };
+  try {
+    const title = text(raw, "title", "Follow-up", 300);
+    if ((title === undefined && !partial) || title === null) throw new Error("Say what the follow-up is");
+    const due_date = futureDateOrNull(raw, "due_date", "Due date");
+    if ((due_date === undefined && !partial) || due_date === null) throw new Error("Choose a due date");
+
+    const company_id = uuidOrNull(raw, "company_id", "Company");
+    if (!partial && !company_id) throw new Error("A follow-up has to belong to a company");
+
+    const value = defined({
+      company_id: company_id ?? undefined,
+      contact_id: uuidOrNull(raw, "contact_id", "Contact"),
+      title,
+      due_date,
+      assigned_to: uuidOrNull(raw, "assigned_to", "Assigned staff member"),
+    });
+    return { value };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+}
+
+export type TaskCompletion = {
+  result: string | null;
+  /** When set, the person is also recording what they did, as an activity. */
+  activity_type: ActivityType | null;
+  next: { due_date: string; title: string | null; assigned_to: string | null } | null;
+};
+
+export function cleanTaskCompletion(input: unknown): Cleaned<TaskCompletion> {
+  const raw = asObject(input);
+  if (!raw) return { error: "Nothing was sent" };
+  try {
+    const activity_type =
+      raw.activity_type === undefined || raw.activity_type === null || raw.activity_type === ""
+        ? null
+        : pick<ActivityType>([...ACTIVITY_TYPES], raw, "activity_type", "Activity type") ?? null;
+
+    const nextRaw = asObject(raw.next);
+    let next: TaskCompletion["next"] = null;
+    if (nextRaw && nextRaw.due_date !== undefined && nextRaw.due_date !== null && nextRaw.due_date !== "") {
+      const due_date = futureDateOrNull(nextRaw, "due_date", "Next follow-up date");
+      next = { due_date: due_date as string, title: text(nextRaw, "title", "Next follow-up", 300) ?? null, assigned_to: uuidOrNull(nextRaw, "assigned_to", "Assigned staff member") ?? null };
+    }
+    return { value: { result: text(raw, "result", "Result", 1000) ?? null, activity_type, next } };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+}
+
+export function cleanOpportunityInput(input: unknown, partial = false): Cleaned<Partial<OpportunityFields>> {
+  const raw = asObject(input);
+  if (!raw) return { error: "Nothing was sent" };
+  try {
+    const title = text(raw, "title", "Opportunity", 200);
+    if ((title === undefined && !partial) || title === null) throw new Error("Name the opportunity");
+    const company_id = uuidOrNull(raw, "company_id", "Company");
+    if (!partial && !company_id) throw new Error("An opportunity has to belong to a company");
+
+    const source =
+      "source" in raw && raw.source !== null && raw.source !== ""
+        ? pick<OpportunitySource>([...OPPORTUNITY_SOURCES], raw, "source", "Source")
+        : "source" in raw
+          ? null
+          : undefined;
+
+    const value = defined({
+      company_id: company_id ?? undefined,
+      title,
+      description: text(raw, "description", "Description", 2000),
+      estimated_value: moneyOrNull(raw, "estimated_value", "Estimated value"),
+      source,
+      assigned_to: uuidOrNull(raw, "assigned_to", "Assigned staff member"),
+    });
+    return { value };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+}
+
+export type OpportunityStatusChange = { status: OpportunityStatus; confirmed: boolean; outcome_note: string | null; won_value: number | null };
+
+export function cleanOpportunityStatus(input: unknown): Cleaned<OpportunityStatusChange> {
+  const raw = asObject(input);
+  if (!raw) return { error: "Nothing was sent" };
+  try {
+    const status = pick<OpportunityStatus>([...OPPORTUNITY_STATUSES], raw, "status", "Status");
+    if (!status) throw new Error("Choose a status");
+    return {
+      value: {
+        status,
+        confirmed: raw.confirmed === true,
+        outcome_note: text(raw, "outcome_note", "Outcome notes", 1000) ?? null,
+        won_value: moneyOrNull(raw, "won_value", "Value won") ?? null,
+      },
+    };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+}
+
+export type TaskQuery = { view: FollowUpView; assigned_to: string | null; page: number; pageSize: number };
+
+export function cleanTaskQuery(params: URLSearchParams): TaskQuery {
+  const view = params.get("view") as FollowUpView;
+  const assigned = params.get("assigned_to");
+  return {
+    view: (FOLLOW_UP_VIEWS as readonly string[]).includes(view) ? view : "today",
+    assigned_to: assigned === "none" ? "none" : isUuid(assigned) ? assigned : null,
+    page: intIn(params.get("page"), 1, 100_000, 1),
+    pageSize: intIn(params.get("pageSize"), 1, 100, 25),
   };
 }

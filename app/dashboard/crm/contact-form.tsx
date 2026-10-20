@@ -15,10 +15,9 @@ export type ContactFormValues = {
   source: string;
   notes: string;
   assigned_to: string;
-  next_follow_up: string;
 };
 
-export const EMPTY_CONTACT: ContactFormValues = { full_name: "", job_title: "", email: "", phone: "", preferred_method: "", source: "", notes: "", assigned_to: "", next_follow_up: "" };
+export const EMPTY_CONTACT: ContactFormValues = { full_name: "", job_title: "", email: "", phone: "", preferred_method: "", source: "", notes: "", assigned_to: "" };
 
 export function toContactValues(c: Record<string, any>): ContactFormValues {
   const out: any = { ...EMPTY_CONTACT };
@@ -115,10 +114,6 @@ export default function ContactForm({
               </option>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label>Next follow-up date</label>
-          <input type="date" value={v.next_follow_up} onChange={set("next_follow_up")} />
         </div>
         <div className="field wide-field">
           <label>Notes</label>
