@@ -9,6 +9,7 @@ const LINKS = [
   { href: "/dashboard/crm/follow-ups", label: "Follow-ups" },
   { href: "/dashboard/crm/contacts", label: "Contacts" },
   { href: "/dashboard/crm/pipeline", label: "Sales Pipeline" },
+  { href: "/dashboard/crm/import", label: "Import and Export" },
   { href: "/dashboard/crm/settings", label: "Settings", adminOnly: true },
 ];
 

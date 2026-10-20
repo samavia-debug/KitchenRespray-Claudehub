@@ -7,16 +7,18 @@ export type CompanyKeys = {
   website_domain: string | null;
   email_domain: string | null;
   phone_key: string | null;
+  mobile_key: string | null;
   address_key: string | null;
 };
 
-export function companyKeys(c: { name?: string | null; website?: string | null; email?: string | null; phone?: string | null; address?: string | null; postcode?: string | null }): CompanyKeys {
+export function companyKeys(c: { name?: string | null; website?: string | null; email?: string | null; phone?: string | null; mobile?: string | null; address?: string | null; postcode?: string | null }): CompanyKeys {
   return {
     name_key: normalizeName(c.name),
     website_domain: websiteDomain(c.website),
     // A company that gives only a gmail address has no business domain to compare.
     email_domain: emailBusinessDomain(c.email),
     phone_key: phoneKey(c.phone),
+    mobile_key: phoneKey(c.mobile),
     address_key: normalizeAddress(c.address, c.postcode),
   };
 }
@@ -45,7 +47,9 @@ export function matchCompanies(keys: CompanyKeys, existing: ExistingCompany[], i
     const possible: string[] = [];
 
     if (keys.name_key && keys.name_key === e.name_key) strong.push("same company name");
-    if (keys.phone_key && keys.phone_key === e.phone_key) strong.push("same phone number");
+    // Either number matching either of theirs is the same business, whichever column it was typed in.
+    const mine = [keys.phone_key, keys.mobile_key].filter(Boolean);
+    if (mine.some((k) => k === e.phone_key || k === e.mobile_key)) strong.push("same phone number");
     if (keys.website_domain && keys.website_domain === e.website_domain) strong.push("same website");
     if (keys.email_domain && keys.email_domain === e.email_domain) possible.push("same email domain");
     if (keys.address_key && keys.address_key === e.address_key) possible.push("same address");

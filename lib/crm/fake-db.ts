@@ -8,10 +8,15 @@ export const fake = {
   nextId: 1,
   /** Name a table here and every query against it fails, to test how errors are handled. */
   failTable: null as string | null,
+  /** Return a message to make an insert of that row fail. A multi-row insert fails whole, as a real one does. */
+  rejectRow: null as ((table: string, row: Row) => string | null) | null,
+  inserts: 0,
   reset() {
     for (const k of Object.keys(this.tables)) delete this.tables[k];
     this.nextId = 1;
     this.failTable = null;
+    this.rejectRow = null;
+    this.inserts = 0;
   },
 };
 
@@ -57,14 +62,19 @@ function test(row: Row, clause: string): boolean {
 
 // The related row each of the newer tables points at, so "company:crm_companies(...)" style selects work.
 const FORWARD: Record<string, [alias: string, table: string, column: string][]> = {
+  crm_companies: [["category", "crm_categories", "category_id"], ["stage", "crm_stages", "stage_id"], ["assignee", "profiles", "assigned_to"]],
   crm_tasks: [["company", "crm_companies", "company_id"], ["contact", "crm_contacts", "contact_id"], ["assignee", "profiles", "assigned_to"]],
-  crm_activities: [["contact", "crm_contacts", "contact_id"], ["user", "profiles", "user_id"]],
-  crm_opportunities: [["assignee", "profiles", "assigned_to"]],
+  crm_activities: [["company", "crm_companies", "company_id"], ["contact", "crm_contacts", "contact_id"], ["user", "profiles", "user_id"]],
+  crm_opportunities: [["company", "crm_companies", "company_id"], ["assignee", "profiles", "assigned_to"]],
+  crm_contacts: [["company", "crm_companies", "company_id"], ["assignee", "profiles", "assigned_to"]],
 };
 
-function withRelations(table: string, row: Row): Row {
+/** Attaches the related rows a query asked for in its select, as the real database does (and no others). */
+function withRelations(table: string, row: Row, select = ""): Row {
   const out = { ...row };
-  for (const [alias, other, column] of FORWARD[table] ?? []) out[alias] = (fake.tables[other] ?? []).find((r) => r.id === row[column]) ?? null;
+  for (const [alias, other, column] of FORWARD[table] ?? []) {
+    if (select.includes(`${alias}:`)) out[alias] = (fake.tables[other] ?? []).find((r) => r.id === row[column]) ?? null;
+  }
   return out;
 }
 
@@ -74,22 +84,28 @@ function run(q: any): { data?: any; error: { message: string } | null; count?: n
   const matches = (r: Row) => q.preds.every((p: (r: Row) => boolean) => p(r));
 
   if (q.op === "insert") {
-    const row = { id: `id${fake.nextId++}`, created_at: new Date().toISOString(), archived_at: null, ...q.payload };
-    rows.push(row);
-    return { data: q.single ? row : [row], error: null };
+    fake.inserts++;
+    const payloads: Row[] = Array.isArray(q.payload) ? q.payload : [q.payload];
+    for (const p of payloads) {
+      const message = fake.rejectRow?.(q.table, p);
+      if (message) return { error: { message } };
+    }
+    const made = payloads.map((p) => ({ id: `id${fake.nextId++}`, created_at: new Date().toISOString(), archived_at: null, ...p }));
+    rows.push(...made);
+    return { data: q.single ? made[0] : made, error: null };
   }
   if (q.op === "update") {
-    const hit = rows.filter((r) => matches(withRelations(q.table, r)));
+    const hit = rows.filter((r) => matches(withRelations(q.table, r, q.selectStr)));
     hit.forEach((r) => Object.assign(r, q.payload));
     return { data: hit.map((r) => ({ ...r })), error: null };
   }
   if (q.op === "delete") {
-    const hit = rows.filter((r) => matches(withRelations(q.table, r)));
+    const hit = rows.filter((r) => matches(withRelations(q.table, r, q.selectStr)));
     fake.tables[q.table] = rows.filter((r) => !hit.includes(r));
     return { data: hit, error: null };
   }
 
-  let out = rows.map((r) => withRelations(q.table, r));
+  let out = rows.map((r) => withRelations(q.table, r, q.selectStr ?? ""));
   // "!inner" drops rows whose related row is missing.
   if (/company:crm_companies!inner/.test(q.selectStr ?? "")) out = out.filter((r) => r.company);
   out = out.filter(matches);

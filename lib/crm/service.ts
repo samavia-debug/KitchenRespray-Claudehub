@@ -9,7 +9,7 @@ export type Db = ReturnType<typeof createServiceClient>;
 export const STAFF_ROLES = ["Admin", "Manager", "Staff"];
 
 // The related names come along with each company, so lists and profiles need no second request.
-const COMPANY_SELECT =
+export const COMPANY_SELECT =
   "*, category:crm_categories(name), stage:crm_stages(name, kind), assignee:profiles!assigned_to(email), contacts:crm_contacts(count)";
 
 export function fail(error: { message: string } | null | undefined, what: string): never {
@@ -25,8 +25,8 @@ export type CompanyRow = Company & {
   contact_count: number;
 };
 
-function flatten(row: any): CompanyRow {
-  const { category, stage, assignee, contacts, name_key, website_domain, email_domain, phone_key, address_key, ...rest } = row;
+export function flatten(row: any): CompanyRow {
+  const { category, stage, assignee, contacts, name_key, website_domain, email_domain, phone_key, mobile_key, address_key, import_batch_id, ...rest } = row;
   return {
     ...rest,
     category_name: category?.name ?? null,
@@ -150,13 +150,13 @@ async function candidateCompanies(db: Db, keys: CompanyKeys): Promise<ExistingCo
   }
   if (keys.website_domain) clauses.push(`website_domain.eq.${keys.website_domain}`);
   if (keys.email_domain) clauses.push(`email_domain.eq.${keys.email_domain}`);
-  if (keys.phone_key) clauses.push(`phone_key.eq.${keys.phone_key}`);
+  for (const k of [keys.phone_key, keys.mobile_key]) if (k) clauses.push(`phone_key.eq.${k}`, `mobile_key.eq.${k}`);
   if (keys.address_key) clauses.push(`address_key.eq.${keys.address_key}`);
   if (clauses.length === 0) return [];
 
   const { data, error } = await db
     .from("crm_companies")
-    .select("id, name, city, name_key, website_domain, email_domain, phone_key, address_key")
+    .select("id, name, city, name_key, website_domain, email_domain, phone_key, mobile_key, address_key")
     .is("archived_at", null)
     .or(clauses.join(","))
     .limit(200);
@@ -197,33 +197,42 @@ async function companyIdsForContactSearch(db: Db, term: string): Promise<string[
   return Array.from(new Set((data ?? []).map((c: any) => c.company_id as string)));
 }
 
+/**
+ * The company list's search and filters (everything except order and paging), as a function to apply to a query.
+ * The list and the export both use it, so an export of "what I am looking at" is exactly what is on screen.
+ */
+export async function companyFilter(db: Db, q: CompanyQuery) {
+  // Searching a person's name finds their company, so the matching companies are looked up first.
+  const contactCompanyIds = q.q ? await companyIdsForContactSearch(db, q.q) : [];
+  return (query: any) => {
+    if (q.q) {
+      const digits = q.q.replace(/\D/g, "");
+      const clauses = [`name.ilike.%${q.q}%`, `city.ilike.%${q.q}%`, `email.ilike.%${q.q}%`, `address.ilike.%${q.q}%`, `phone.ilike.%${q.q}%`, `mobile.ilike.%${q.q}%`, `website.ilike.%${q.q}%`];
+      if (digits.length >= 4) clauses.push(`phone_key.ilike.%${digits}%`, `mobile_key.ilike.%${digits}%`);
+      if (contactCompanyIds.length) clauses.push(`id.in.(${contactCompanyIds.join(",")})`);
+      query = query.or(clauses.join(","));
+    }
+    if (q.location) query = query.or(["city", "county", "address", "postcode"].map((f) => `${f}.ilike.%${q.location}%`).join(","));
+    if (q.category_id) query = query.eq("category_id", q.category_id);
+    if (q.stage_id) query = query.eq("stage_id", q.stage_id);
+    if (q.assigned_to === "none") query = query.is("assigned_to", null);
+    else if (q.assigned_to) query = query.eq("assigned_to", q.assigned_to);
+    if (q.priority) query = query.eq("priority", q.priority);
+    if (q.source) query = query.ilike("source", `%${q.source}%`);
+    // "Not contacted since" includes companies that have never been contacted.
+    if (q.contacted_before) query = query.or(`last_contacted_at.is.null,last_contacted_at.lt.${q.contacted_before}`);
+    if (q.follow_up_before) query = query.lte("next_follow_up", q.follow_up_before);
+    if (q.min_value !== null) query = query.gte("estimated_value", q.min_value);
+    if (q.max_value !== null) query = query.lte("estimated_value", q.max_value);
+    return query;
+  };
+}
+
 export async function listCompanies(q: CompanyQuery): Promise<{ companies: CompanyRow[]; total: number }> {
   const db = createServiceClient();
-  let query = db.from("crm_companies").select(COMPANY_SELECT, { count: "exact" }).is("archived_at", null);
-
-  if (q.q) {
-    const digits = q.q.replace(/\D/g, "");
-    const clauses = [`name.ilike.%${q.q}%`, `city.ilike.%${q.q}%`, `email.ilike.%${q.q}%`, `address.ilike.%${q.q}%`, `phone.ilike.%${q.q}%`, `website.ilike.%${q.q}%`];
-    if (digits.length >= 4) clauses.push(`phone_key.ilike.%${digits}%`);
-    const ids = await companyIdsForContactSearch(db, q.q);
-    if (ids.length) clauses.push(`id.in.(${ids.join(",")})`);
-    query = query.or(clauses.join(","));
-  }
-  if (q.location) query = query.or(["city", "county", "address", "postcode"].map((f) => `${f}.ilike.%${q.location}%`).join(","));
-  if (q.category_id) query = query.eq("category_id", q.category_id);
-  if (q.stage_id) query = query.eq("stage_id", q.stage_id);
-  if (q.assigned_to === "none") query = query.is("assigned_to", null);
-  else if (q.assigned_to) query = query.eq("assigned_to", q.assigned_to);
-  if (q.priority) query = query.eq("priority", q.priority);
-  if (q.source) query = query.ilike("source", `%${q.source}%`);
-  // "Not contacted since" includes companies that have never been contacted.
-  if (q.contacted_before) query = query.or(`last_contacted_at.is.null,last_contacted_at.lt.${q.contacted_before}`);
-  if (q.follow_up_before) query = query.lte("next_follow_up", q.follow_up_before);
-  if (q.min_value !== null) query = query.gte("estimated_value", q.min_value);
-  if (q.max_value !== null) query = query.lte("estimated_value", q.max_value);
-
+  const apply = await companyFilter(db, q);
   const from = (q.page - 1) * q.pageSize;
-  const { data, count, error } = await query
+  const { data, count, error } = await apply(db.from("crm_companies").select(COMPANY_SELECT, { count: "exact" }).is("archived_at", null))
     .order(q.sort, { ascending: q.dir === "asc", nullsFirst: false })
     .order("name")
     .order("id")

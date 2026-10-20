@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CompanyRow } from "@/lib/crm/service";
 import { PRIORITIES, type SortField } from "@/lib/crm/types";
 import { api } from "../api";
+import { downloadExport } from "../download";
 import { PriorityMark, StageBadge } from "../badges";
 import { useCrm } from "../crm-context";
 import { FOLLOW_UP_COLOR, fmtDate, fmtMoney, followUpState, personName } from "../fmt";
@@ -67,6 +68,8 @@ export default function CompaniesPage() {
   const [bulkCategory, setBulkCategory] = useState("");
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState<string | null>(null);
   const requestId = useRef(0);
 
   // Filters are kept for the tab, so coming back from a company's page does not lose the search.
@@ -154,16 +157,44 @@ export default function CompaniesPage() {
   }
 
   const allOnPage = rows.length > 0 && rows.every((r) => selected.has(r.id));
+  const isOverseer = meta?.role === "Admin" || meta?.role === "Manager";
+
+  /** Exports what is selected, or else everything the current search and filters show (not just this page). */
+  async function exportRows(format: "csv" | "xlsx") {
+    setExporting(true);
+    setExportNote(null);
+    const qs = new URLSearchParams();
+    for (const [k, v] of Object.entries(filters)) if (v !== "" && v !== null && k !== "page") qs.set(k, String(v));
+    const err = await downloadExport({ type: "companies", format, ...(selected.size > 0 ? { ids: Array.from(selected) } : { qs: qs.toString() }) });
+    setExporting(false);
+    setExportNote(err ?? `Exported ${selected.size > 0 ? selected.size : total} compan${(selected.size > 0 ? selected.size : total) === 1 ? "y" : "ies"}.`);
+  }
 
   return (
     <>
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", flexWrap: "wrap", marginBottom: "0.9rem" }}>
           <h2 style={{ margin: 0 }}>Companies</h2>
-          <Link href="/dashboard/crm/companies/new" className="btn">
-            + Add company
-          </Link>
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+            {isOverseer && (
+              <>
+                <button className="btn btn-secondary" style={{ padding: "0.5rem 0.8rem", fontSize: "0.85rem" }} disabled={exporting || total === 0} onClick={() => exportRows("xlsx")} title="Downloads an Excel file of the selected companies, or of everything the filters show">
+                  {exporting ? "Preparing..." : selected.size > 0 ? `Export ${selected.size} selected (Excel)` : `Export ${total} shown (Excel)`}
+                </button>
+                <button className="btn btn-secondary" style={{ padding: "0.5rem 0.8rem", fontSize: "0.85rem" }} disabled={exporting || total === 0} onClick={() => exportRows("csv")}>
+                  CSV
+                </button>
+              </>
+            )}
+            <Link href="/dashboard/crm/import" className="btn btn-secondary" style={{ padding: "0.5rem 0.8rem", fontSize: "0.85rem" }}>
+              Import
+            </Link>
+            <Link href="/dashboard/crm/companies/new" className="btn">
+              + Add company
+            </Link>
+          </div>
         </div>
+        {exportNote && <p style={{ margin: "-0.4rem 0 0.75rem", fontSize: "0.85rem" }}>{exportNote}</p>}
 
         <div className="crm-filters">
           <div className="field" style={{ gridColumn: "span 2" }}>

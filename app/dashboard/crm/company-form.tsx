@@ -12,6 +12,7 @@ export type CompanyFormValues = {
   category_id: string;
   website: string;
   phone: string;
+  mobile: string;
   email: string;
   address: string;
   city: string;
@@ -28,7 +29,7 @@ export type CompanyFormValues = {
 };
 
 export const EMPTY_COMPANY: CompanyFormValues = {
-  name: "", category_id: "", website: "", phone: "", email: "", address: "", city: "", county: "", postcode: "", country: "Ireland",
+  name: "", category_id: "", website: "", phone: "", mobile: "", email: "", address: "", city: "", county: "", postcode: "", country: "Ireland",
   description: "", services: "", estimated_value: "", source: "", priority: "Medium", assigned_to: "", notes: "",
 };
 
@@ -120,6 +121,7 @@ export default function CompanyForm({
         </div>
         {input("website", "Website", { placeholder: "aceroofing.ie", max: 300 })}
         {input("phone", "Business telephone", { placeholder: "+353 1 234 5678", max: 40 })}
+        {input("mobile", "Mobile / WhatsApp", { placeholder: "087 123 4567", max: 40 })}
         {input("email", "General email", { type: "email", max: 200 })}
         {input("address", "Address", { max: 300 })}
         {input("city", "Town or city", { max: 100 })}

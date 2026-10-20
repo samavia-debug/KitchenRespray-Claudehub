@@ -214,6 +214,9 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
               <Detail label="Telephone">
                 <Phone value={company.phone} />
               </Detail>
+              <Detail label="Mobile">
+                <Phone value={company.mobile} />
+              </Detail>
               <Detail label="Email">{company.email && <a href={`mailto:${company.email}`}>{company.email}</a>}</Detail>
               <Detail label="Address">{[company.address, company.city, company.county, company.postcode, company.country].filter(Boolean).join(", ")}</Detail>
               <Detail label="Potential services">{company.services}</Detail>
@@ -330,6 +333,26 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
       </div>
 
       <OpportunitiesSection companyId={params.id} onChanged={load} />
+
+      {Object.keys(company.extra ?? {}).length > 0 && (
+        <div className="card">
+          <h2>Imported details</h2>
+          <p style={{ margin: "0 0 0.75rem", fontSize: "0.8rem", color: "var(--muted)" }}>Kept from the spreadsheet this company was imported from. These have not been checked, so treat them as a lead, not as fact. Anything under &quot;Not imported&quot; was a value that could not be used as it was written.</p>
+          <div className="crm-form-grid">
+            {Object.entries(company.extra).map(([k, v]) => (
+              <Detail key={k} label={k}>
+                {typeof v === "string" && /^https?:\/\//i.test(v) ? (
+                  <a href={v} target="_blank" rel="noreferrer">
+                    {v.length > 60 ? `${v.slice(0, 57)}...` : v}
+                  </a>
+                ) : (
+                  <span style={{ whiteSpace: "pre-line" }}>{String(v)}</span>
+                )}
+              </Detail>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="card">
         <h2>Pipeline history</h2>

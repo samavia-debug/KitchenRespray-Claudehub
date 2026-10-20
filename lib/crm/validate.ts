@@ -132,6 +132,7 @@ export function cleanCompanyInput(input: unknown, partial = false): Cleaned<Part
       category_id: uuidOrNull(raw, "category_id", "Category"),
       website: websiteOrNull(raw, "website"),
       phone: phoneOrNull(raw, "phone", "Phone"),
+      mobile: phoneOrNull(raw, "mobile", "Mobile"),
       email: emailOrNull(raw, "email", "Email"),
       address: text(raw, "address", "Address", 300),
       city: text(raw, "city", "Town or city", 100),

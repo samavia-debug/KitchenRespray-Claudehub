@@ -20,6 +20,8 @@ export type CompanyFields = {
   category_id: string | null;
   website: string | null;
   phone: string | null;
+  /** A mobile (WhatsApp) number, apart from the main phone. */
+  mobile: string | null;
   email: string | null;
   address: string | null;
   city: string | null;
