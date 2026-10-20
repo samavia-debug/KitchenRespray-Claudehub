@@ -11,7 +11,7 @@ const num = (v: unknown): number | null => (v === null || v === undefined ? null
 export async function loadReportData(db: Db, range: { startIso: string; endIso: string }): Promise<ReportData> {
   const [companies, stages, categories, people, activities, openTasks, doneTasks, stageHistory, opportunities, oppHistory] = await Promise.all([
     fetchAllRows<any>((from, to) =>
-      db.from("crm_companies").select("id, name, category_id, assigned_to, created_by, created_at, stage_id, stage_changed_at, last_contacted_at, estimated_value, won_value, priority, next_follow_up").is("archived_at", null).order("id").range(from, to)
+      db.from("crm_companies").select("id, name, category_id, county, assigned_to, created_by, created_at, stage_id, stage_changed_at, last_contacted_at, estimated_value, won_value, priority, next_follow_up").is("archived_at", null).order("id").range(from, to)
     ),
     db.from("crm_stages").select("id, name, kind, sort_order, active"),
     db.from("crm_categories").select("id, name, active"),

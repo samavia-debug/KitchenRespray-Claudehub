@@ -1,5 +1,6 @@
 import { dublinToday } from "./followups";
 import { cleanWebsite, searchTerm } from "./normalize";
+import { COUNTY_CHOICES, normalizeCounty, NO_COUNTY } from "./territories";
 import {
   ACTIVITY_TYPES,
   CONTACT_METHODS,
@@ -117,6 +118,20 @@ function defined<T extends Record<string, unknown>>(obj: T): Partial<T> {
  * Checks a company from the browser. `partial` is for updates: only the fields sent are returned.
  * For a new company the name is required and the rest get their defaults.
  */
+const COUNTY_HELP = "County must be one of the Leinster counties, or Outside Leinster";
+
+/** A county as one of the fixed choices, so "Co. Carlow" and "carlow" are the same place. Empty clears it. */
+function countyOrNull(raw: Raw): string | null | undefined {
+  if (!("county" in raw)) return undefined;
+  const v = raw.county;
+  if (v === null || v === undefined) return null;
+  if (typeof v !== "string") throw new Error(COUNTY_HELP);
+  if (v.trim() === "") return null;
+  const county = normalizeCounty(v);
+  if (!county) throw new Error(COUNTY_HELP);
+  return county;
+}
+
 export function cleanCompanyInput(input: unknown, partial = false): Cleaned<Partial<CompanyFields>> {
   const raw = asObject(input);
   if (!raw) return { error: "Nothing was sent" };
@@ -136,7 +151,7 @@ export function cleanCompanyInput(input: unknown, partial = false): Cleaned<Part
       email: emailOrNull(raw, "email", "Email"),
       address: text(raw, "address", "Address", 300),
       city: text(raw, "city", "Town or city", 100),
-      county: text(raw, "county", "County", 100),
+      county: countyOrNull(raw),
       postcode: text(raw, "postcode", "Postcode", 20),
       country: country === null ? "Ireland" : country,
       description: text(raw, "description", "Description", 2000),
@@ -213,7 +228,7 @@ export function cleanStageChange(input: unknown): Cleaned<StageChange> {
   }
 }
 
-export type BulkChange = { ids: string[]; action: "assign" | "category"; value: string | null; confirmed: boolean };
+export type BulkChange = { ids: string[]; action: "assign" | "category" | "county"; value: string | null; confirmed: boolean };
 export const MAX_BULK = 200;
 
 export function cleanBulkChange(input: unknown): Cleaned<BulkChange> {
@@ -225,8 +240,12 @@ export function cleanBulkChange(input: unknown): Cleaned<BulkChange> {
     if (ids.length > MAX_BULK) throw new Error(`Select no more than ${MAX_BULK} companies at a time`);
     if (!ids.every(isUuid)) throw new Error("One of the selected companies is not valid");
     const action = raw.action;
-    if (action !== "assign" && action !== "category") throw new Error("Unknown bulk action");
-    const value = uuidOrNull(raw, "value", action === "assign" ? "Staff member" : "Category") ?? null;
+    if (action !== "assign" && action !== "category" && action !== "county") throw new Error("Unknown bulk action");
+    let value: string | null;
+    if (action === "county") {
+      const county = countyOrNull({ county: raw.value });
+      value = county ?? null;
+    } else value = uuidOrNull(raw, "value", action === "assign" ? "Staff member" : "Category") ?? null;
     return { value: { ids: Array.from(new Set(ids as string[])), action, value, confirmed: raw.confirmed === true } };
   } catch (err: any) {
     return { error: err.message };
@@ -263,6 +282,7 @@ export function cleanCompanyQuery(params: URLSearchParams): CompanyQuery {
     priority: PRIORITIES.includes(priority as Priority) ? (priority as Priority) : null,
     source: searchTerm(params.get("source")) || null,
     location: searchTerm(params.get("location")),
+    county: params.get("county") === NO_COUNTY ? NO_COUNTY : COUNTY_CHOICES.includes(params.get("county") ?? "") ? params.get("county") : null,
     contacted_before: date("contacted_before"),
     follow_up_before: date("follow_up_before"),
     min_value: num("min_value"),

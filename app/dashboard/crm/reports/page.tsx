@@ -5,7 +5,7 @@ import { MIN_CLOSED, MIN_COHORT, METRIC_INFO, type CountRow, type MetricKey } fr
 import { OPPORTUNITY_STATUS_LABEL } from "@/lib/crm/types";
 import { useCrm } from "../crm-context";
 import { fmtMoney } from "../fmt";
-import { Controls, DrillPanel, FunnelBars, pct, ReportControls, StatTile, TrendBars, useControls, useReport } from "../report-ui";
+import { Controls, DrillPanel, FunnelBars, pct, ReportControls, StatTile, TerritoryTable, TrendBars, useControls, useReport } from "../report-ui";
 
 const th = { whiteSpace: "normal" as const };
 
@@ -271,6 +271,14 @@ export default function ReportsPage() {
         <h2>By customer category</h2>
         {report ? <CountTable rows={report.byCategory} first="Category" people={false} /> : <p style={{ color: "var(--muted)", margin: 0 }}>Loading...</p>}
         <p style={{ margin: "0.6rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>Win rate is wins out of wins plus losses, shown once there are at least {MIN_CLOSED} closed deals.</p>
+      </div>
+
+      <div className="card" style={{ opacity: loading ? 0.6 : 1 }}>
+        <h2>By county</h2>
+        {report ? <TerritoryTable rows={report.byCounty} /> : <p style={{ color: "var(--muted)", margin: 0 }}>Loading...</p>}
+        <p style={{ margin: "0.6rem 0 0", fontSize: "0.78rem", color: "var(--muted)" }}>
+          A company counts under the county on its record. The first columns show how things stand now; the others are for the period above. The Territories tab has the same table for everyone.
+        </p>
       </div>
 
       <div className="card" style={{ opacity: loading ? 0.6 : 1 }}>

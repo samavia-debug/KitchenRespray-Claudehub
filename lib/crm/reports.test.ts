@@ -398,3 +398,63 @@ describe("an empty CRM", () => {
     expect(r.sales.confirmedValue).toBe(0);
   });
 });
+
+describe("by county", () => {
+  // Ace Hotel (Carlow), Beta Builders (Kilkenny), Cork Joinery (Carlow), Dune Resort (Dublin), Eden Fit-Out (outside Leinster), Old Lead (no county).
+  const withCounties = () => {
+    const d = fixture();
+    const set = (id: string, county: string | null) => (d.companies.find((c) => c.id === id)!.county = county);
+    set("A", "Carlow"); set("B", "Kilkenny"); set("C", "Carlow"); set("D", "Dublin"); set("E", "Outside Leinster"); set("G", null);
+    return d;
+  };
+  const r = report(withCounties());
+  const county = (label: string) => r.byCounty.find((x) => x.label === label)!;
+
+  it("always lists all twelve Leinster counties in order, then the others that have companies", () => {
+    expect(r.byCounty.map((x) => x.label)).toEqual([
+      "Carlow", "Dublin", "Kildare", "Kilkenny", "Laois", "Longford", "Louth", "Meath", "Offaly", "Westmeath", "Wexford", "Wicklow", "Outside Leinster", "No county set",
+    ]);
+    expect(county("Laois")).toMatchObject({ companies: 0, added: 0, won: 0, wonValue: 0, openOpportunities: 0 });
+  });
+
+  it("leaves out Outside Leinster and No county set when nothing is there", () => {
+    const d = withCounties();
+    d.companies = d.companies.filter((c) => c.id !== "E" && c.id !== "G");
+    expect(report(d).byCounty.map((x) => x.label)).toHaveLength(12);
+  });
+
+  it("builds each county's row from the same rules as the totals", () => {
+    expect(county("Carlow")).toMatchObject({ companies: 2, added: 1, won: 1, wonValue: 5000 });
+    expect(county("Dublin")).toMatchObject({ companies: 1, contactsMade: 2, opportunities: 1, won: 1, wonValue: 16500 });
+    expect(county("Kilkenny")).toMatchObject({ companies: 1, added: 1, contactsMade: 1, quotesSent: 1, followUpsCompleted: 1 });
+    expect(county("Outside Leinster")).toMatchObject({ companies: 1, lost: 1 });
+    expect(county("No county set")).toMatchObject({ companies: 1, awaitingContact: 1 });
+  });
+
+  it("shows how things stand now: follow-ups due and opportunities still open", () => {
+    expect(county("Dublin")).toMatchObject({ dueToday: 1, overdue: 0, openOpportunities: 1, openEstimate: 3000 });
+    expect(county("Kilkenny")).toMatchObject({ overdue: 1, openOpportunities: 1, openEstimate: 8000 });
+    expect(county("Carlow")).toMatchObject({ openOpportunities: 0, openEstimate: 0 });
+  });
+
+  it("adds up to the overall figures, so nothing is lost or counted twice", () => {
+    const sum = (f: (x: (typeof r.byCounty)[number]) => number) => r.byCounty.reduce((n, x) => n + f(x), 0);
+    expect(sum((x) => x.companies)).toBe(r.metrics.totalCompanies.value);
+    expect(sum((x) => x.wonValue)).toBe(r.metrics.salesValue.money);
+    expect(sum((x) => x.won)).toBe(r.metrics.dealsWon.value);
+    expect(sum((x) => x.contactsMade)).toBe(r.metrics.contactsMade.value);
+    expect(sum((x) => x.openOpportunities)).toBe(r.sales.openEstimate.count);
+    expect(sum((x) => x.openEstimate)).toBe(r.sales.openEstimate.value);
+  });
+
+  it("follows the category and person filters", () => {
+    const hotels = report(withCounties(), { category_id: "c-hotel", staff_id: null });
+    expect(hotels.byCounty.find((x) => x.label === "Carlow")).toMatchObject({ companies: 1 }); // only Ace Hotel
+    expect(hotels.byCounty.find((x) => x.label === "Kilkenny")).toMatchObject({ companies: 0 });
+  });
+
+  it("treats companies that carry no county field (older data) as having no county", () => {
+    const d = fixture();
+    expect(report(d).byCounty.find((x) => x.label === "No county set")!.companies).toBe(6);
+  });
+});

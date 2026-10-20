@@ -131,7 +131,7 @@ checked for every route by `lib/crm/permissions.test.ts`.
 
 **Setup** — run these in the Supabase SQL editor, in order (each is safe to run twice):
 `20261020100000_trade_crm.sql`, `20261021100000_crm_activities_tasks.sql`, `20261022100000_crm_import.sql`,
-`20261023100000_crm_reports.sql`, `20261024100000_crm_ai.sql`. The CRM tables have row-level security on and no policy,
+`20261023100000_crm_reports.sql`, `20261024100000_crm_ai.sql`, `20261025100000_crm_territories.sql`. The CRM tables have row-level security on and no policy,
 so they are reachable only through the server routes (which check the role). Environment variables: `ANTHROPIC_API_KEY`
 (already used elsewhere; only the AI tools need it) and, optionally, `CRM_AI_DAILY_LIMIT` (AI requests per person per day,
 default 40). No other service, key or recurring cost is involved.
@@ -139,6 +139,8 @@ default 40). No other service, key or recurring cost is involved.
 **Where the code is** — `lib/crm/` (rules, data access, reports), `lib/crm/import/` (reading and checking spreadsheets),
 `lib/crm/export/`, `lib/crm/ai/` (prompts, website reading, checks on what the AI says), `app/api/crm/` (routes) and
 `app/dashboard/crm/` (screens).
+
+**Territories** — a company's county is one of the twelve Leinster counties, "Outside Leinster", or not set (`lib/crm/territories.ts`). Typed or imported spellings ("Co. Carlow", "Dublin 6W") are tidied to the fixed list; anything that is not a county is refused (or, on import, left out with a warning and kept on the company). The Territories tab and the "By county" report show every county side by side, and the company list can be filtered, and bulk-updated, by county. The 20261025 migration tidies existing records and makes the database enforce the list.
 
 **Things worth knowing** — Imports read `.xlsx`, `.csv`, `.tsv` and `.txt`. Apple Numbers (`.numbers`), old `.xls` and PDF
 files are recognised but must first be exported to Excel or CSV. A company is never changed by an import; anything that

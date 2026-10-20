@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { CompanyRow } from "@/lib/crm/service";
+import { COUNTY_CHOICES, NO_COUNTY } from "@/lib/crm/territories";
 import { PRIORITIES, type SortField } from "@/lib/crm/types";
 import { api } from "../api";
 import { downloadExport } from "../download";
@@ -14,6 +15,7 @@ import { FOLLOW_UP_COLOR, fmtDate, fmtMoney, followUpState, personName } from ".
 type Filters = {
   q: string;
   category_id: string;
+  county: string;
   stage_id: string;
   assigned_to: string;
   priority: string;
@@ -29,7 +31,7 @@ type Filters = {
 };
 
 const DEFAULTS: Filters = {
-  q: "", category_id: "", stage_id: "", assigned_to: "", priority: "", source: "", location: "", contacted_before: "", follow_up_before: "",
+  q: "", category_id: "", county: "", stage_id: "", assigned_to: "", priority: "", source: "", location: "", contacted_before: "", follow_up_before: "",
   min_value: "", max_value: "", sort: "name", dir: "asc", page: 1,
 };
 const PAGE_SIZE = 25;
@@ -46,7 +48,7 @@ function loadSaved(): Filters {
 
 const SORTABLE: { field: SortField; label: string }[] = [
   { field: "name", label: "Company" },
-  { field: "city", label: "City" },
+  { field: "city", label: "Town" },
   { field: "next_follow_up", label: "Next follow-up" },
   { field: "estimated_value", label: "Estimate" },
   { field: "created_at", label: "Added" },
@@ -66,6 +68,7 @@ export default function CompaniesPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkAssign, setBulkAssign] = useState("");
   const [bulkCategory, setBulkCategory] = useState("");
+  const [bulkCounty, setBulkCounty] = useState("");
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -74,7 +77,9 @@ export default function CompaniesPage() {
 
   // Filters are kept for the tab, so coming back from a company's page does not lose the search.
   useEffect(() => {
-    const saved = loadSaved();
+    // Coming from the Territories tab, the county in the address is the filter; otherwise the tab's remembered filters.
+    const fromAddress = new URLSearchParams(window.location.search).get("county");
+    const saved = fromAddress && (COUNTY_CHOICES.includes(fromAddress) || fromAddress === NO_COUNTY) ? { ...DEFAULTS, county: fromAddress } : loadSaved();
     setFilters(saved);
     setQInput(saved.q);
     setShowMore(!!(saved.source || saved.location || saved.contacted_before || saved.follow_up_before || saved.min_value || saved.max_value));
@@ -133,16 +138,18 @@ export default function CompaniesPage() {
     });
   }
 
-  async function applyBulk(action: "assign" | "category") {
-    const value = action === "assign" ? bulkAssign : bulkCategory;
-    if (action === "category" && !value) return;
-    const target =
+  async function applyBulk(action: "assign" | "category" | "county") {
+    const value = action === "assign" ? bulkAssign : action === "county" ? bulkCounty : bulkCategory;
+    if (action !== "assign" && !value) return;
+    const many = `${selected.size} compan${selected.size === 1 ? "y" : "ies"}`;
+    const what =
       action === "assign"
-        ? value === "none"
-          ? "Unassigned"
-          : personName(meta?.assignees.find((a) => a.id === value)?.email)
-        : meta?.categories.find((c) => c.id === value)?.name;
-    const what = action === "assign" ? `assign ${selected.size} compan${selected.size === 1 ? "y" : "ies"} to ${target}` : `set the category of ${selected.size} compan${selected.size === 1 ? "y" : "ies"} to ${target}`;
+        ? `assign ${many} to ${value === "none" ? "Unassigned" : personName(meta?.assignees.find((a) => a.id === value)?.email)}`
+        : action === "county"
+          ? value === "none"
+            ? `clear the county of ${many}`
+            : `set the county of ${many} to ${value}`
+          : `set the category of ${many} to ${meta?.categories.find((c) => c.id === value)?.name}`;
     if (!window.confirm(`Are you sure you want to ${what}?`)) return;
 
     setBulkBusy(true);
@@ -153,6 +160,7 @@ export default function CompaniesPage() {
     setBulkMessage(`Done: ${res.body.updated} updated.`);
     setBulkAssign("");
     setBulkCategory("");
+    setBulkCounty("");
     load();
   }
 
@@ -214,6 +222,16 @@ export default function CompaniesPage() {
             </select>
           </div>
           <div className="field">
+            <label>County</label>
+            <select value={filters.county} onChange={(e) => set({ county: e.target.value })}>
+              <option value="">All counties</option>
+              {COUNTY_CHOICES.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+              <option value={NO_COUNTY}>No county set</option>
+            </select>
+          </div>
+          <div className="field">
             <label>Stage</label>
             <select value={filters.stage_id} onChange={(e) => set({ stage_id: e.target.value })}>
               <option value="">All</option>
@@ -270,7 +288,7 @@ export default function CompaniesPage() {
         {showMore && (
           <div className="crm-filters" style={{ marginBottom: "0.9rem" }}>
             <div className="field">
-              <label>Location (town, county, postcode)</label>
+              <label>Location (town, postcode, address)</label>
               <input value={filters.location} onChange={(e) => set({ location: e.target.value })} />
             </div>
             <div className="field">
@@ -324,6 +342,16 @@ export default function CompaniesPage() {
             <button className="btn btn-secondary" style={{ padding: "0.35rem 0.7rem", fontSize: "0.8rem" }} disabled={!bulkCategory || bulkBusy} onClick={() => applyBulk("category")}>
               Set category
             </button>
+            <select style={{ width: "auto" }} value={bulkCounty} onChange={(e) => setBulkCounty(e.target.value)} aria-label="Set county of selected">
+              <option value="">Set county...</option>
+              {COUNTY_CHOICES.map((c) => (
+                <option key={c}>{c}</option>
+              ))}
+              <option value="none">Clear county</option>
+            </select>
+            <button className="btn btn-secondary" style={{ padding: "0.35rem 0.7rem", fontSize: "0.8rem" }} disabled={!bulkCounty || bulkBusy} onClick={() => applyBulk("county")}>
+              Set county
+            </button>
             <button className="btn btn-secondary" style={{ padding: "0.35rem 0.7rem", fontSize: "0.8rem" }} onClick={() => setSelected(new Set())}>
               Clear selection
             </button>
@@ -375,7 +403,10 @@ export default function CompaniesPage() {
                         {c.name}
                       </Link>
                     </td>
-                    <td>{c.city || "—"}</td>
+                    <td>
+                      {c.city || "—"}
+                      {c.county && <div style={{ color: "var(--muted)", fontSize: "0.78rem" }}>{c.county}</div>}
+                    </td>
                     <td>{c.category_name || "—"}</td>
                     <td>
                       <StageBadge name={c.stage_name} kind={c.stage_kind} />

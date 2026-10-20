@@ -101,6 +101,8 @@ export type CompanyQuery = {
   priority: Priority | null;
   source: string | null;
   location: string;
+  /** One of the county choices, or "none" for companies with no county set. */
+  county: string | null;
   contacted_before: string | null;
   follow_up_before: string | null;
   min_value: number | null;

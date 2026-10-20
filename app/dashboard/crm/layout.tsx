@@ -10,6 +10,7 @@ const LINKS: { href: string; label: string; adminOnly?: boolean; managerOnly?: b
   { href: "/dashboard/crm/follow-ups", label: "Follow-ups" },
   { href: "/dashboard/crm/contacts", label: "Contacts" },
   { href: "/dashboard/crm/pipeline", label: "Sales Pipeline" },
+  { href: "/dashboard/crm/territories", label: "Territories" },
   { href: "/dashboard/crm/reports", label: "Reports", managerOnly: true },
   { href: "/dashboard/crm/import", label: "Import and Export" },
   { href: "/dashboard/crm/settings", label: "Settings", adminOnly: true },

@@ -1,6 +1,7 @@
 import { addDays } from "./followups";
 import { personName } from "./names";
 import { eachDay, type ResolvedRange } from "./report-range";
+import { LEINSTER_COUNTIES, NO_COUNTY, OUTSIDE_LEINSTER } from "./territories";
 import { ACTIVITY_TYPES, CONTACT_ACTIVITY_TYPES, OPPORTUNITY_SOURCES, type ActivityType, type OpportunityStatus, type StageKind } from "./types";
 
 // ---------------------------------------------------------------------------------------------------------------------
@@ -28,6 +29,8 @@ export type RCompany = {
   id: string;
   name: string;
   category_id: string | null;
+  /** One of the county choices, or none. Optional so older callers and tests need not supply it. */
+  county?: string | null;
   assigned_to: string | null;
   created_by: string | null;
   created_at: string;
@@ -131,7 +134,15 @@ export type CountRow = {
   wonValue: number;
   /** Won out of won plus lost, or null when there are too few closed deals to say. */
   winRate: number | null;
+  /** How things stand now, whatever the period: companies not archived, awaiting a first contact, and follow-ups due. */
+  companies: number;
+  awaitingContact: number;
+  overdue: number;
+  dueToday: number;
 };
+
+/** A county's row: the same figures, plus the opportunities still open there. */
+export type TerritoryRow = CountRow & { openOpportunities: number; openEstimate: number };
 
 export type FunnelStep = { key: string; label: string; count: number; share: number | null };
 
@@ -152,6 +163,7 @@ export type ReportResult = {
   trend: { bucket: "day" | "week"; points: { date: string; added: number; contacts: number }[] };
   activityByType: { type: ActivityType; count: number }[];
   byCategory: CountRow[];
+  byCounty: TerritoryRow[];
   byStaff: CountRow[];
   funnel: { cohort: number; enough: boolean; steps: FunnelStep[] };
   opportunityFunnel: { cohort: number; enough: boolean; steps: FunnelStep[] };
@@ -203,7 +215,7 @@ type Collected = Record<Exclude<MetricKey, "salesValue" | "dealsWon" | "dealsLos
  * Gathers the records behind every metric for one category and one person. The overall figures, each row of the
  * category table and each row of the staff table are all this function with different arguments, so they always agree.
  */
-function collect(d: ReportData, ix: Index, range: ResolvedRange, today: string, ctx: { category: string | null; staff: string | null }): Collected {
+function collect(d: ReportData, ix: Index, range: ResolvedRange, today: string, ctx: { category: string | null; staff: string | null; county?: string | null }): Collected {
   const startMs = Date.parse(range.startIso);
   const endMs = Date.parse(range.endIso);
   const within = (iso: string | null | undefined) => {
@@ -212,7 +224,8 @@ function collect(d: ReportData, ix: Index, range: ResolvedRange, today: string, 
     return t >= startMs && t < endMs;
   };
   const who = (id: string | null | undefined) => (id ? ix.name.get(id) ?? null : null);
-  const catOk = (c: RCompany | undefined) => !!c && (ctx.category === null || (ctx.category === NO_CATEGORY ? c.category_id === null : c.category_id === ctx.category));
+  const countyOk = (c: RCompany) => ctx.county === undefined || ctx.county === null || (ctx.county === NO_COUNTY ? !c.county : c.county === ctx.county);
+  const catOk = (c: RCompany | undefined) => !!c && countyOk(c) && (ctx.category === null || (ctx.category === NO_CATEGORY ? c.category_id === null : c.category_id === ctx.category));
   const staffIs = (id: string | null | undefined) => ctx.staff === null || id === ctx.staff;
   const row = (c: RCompany, detail: string, by: string | null, at: string | null): DrillRow => ({ companyId: c.id, company: c.name, detail, who: who(by), at });
   const kindOf = (c: RCompany): StageKind => (c.stage_id ? ix.stage.get(c.stage_id)?.kind ?? "open" : "open");
@@ -313,6 +326,10 @@ function countRow(key: string, label: string, c: Collected): CountRow {
     lost: c.dealsLost.length,
     wonValue,
     winRate: closed >= MIN_CLOSED ? c.dealsWon.length / closed : null,
+    companies: c.totalCompanies.length,
+    awaitingContact: c.awaitingContact.length,
+    overdue: c.overdue.length,
+    dueToday: c.dueToday.length,
   };
 }
 
@@ -413,6 +430,18 @@ export function buildReport(d: ReportData, range: ResolvedRange, filters: Report
   const byCategory = catList
     .filter((x) => filters.category_id === null || filters.category_id === x.key)
     .map((x) => countRow(x.key, x.label, collect(d, ix, range, today, { category: x.key, staff: filters.staff_id })));
+  // By county: every Leinster county is always listed (a county with nothing in it is information too), then the rest.
+  const countyOf = (companyId: string) => ix.company.get(companyId)?.county ?? null;
+  const countyKeys = [...LEINSTER_COUNTIES, OUTSIDE_LEINSTER, NO_COUNTY] as string[];
+  const countyLabel = (key: string) => (key === NO_COUNTY ? "No county set" : key);
+  const byCounty: TerritoryRow[] = countyKeys
+    .map((key) => {
+      const row = countRow(key, countyLabel(key), collect(d, ix, range, today, { category: filters.category_id, staff: filters.staff_id, county: key }));
+      const open = openOpps.filter((o) => (key === NO_COUNTY ? !countyOf(o.company_id) : countyOf(o.company_id) === key));
+      return { ...row, openOpportunities: open.length, openEstimate: open.reduce((n, o) => n + (o.estimated_value ?? 0), 0) };
+    })
+    .filter((r) => (LEINSTER_COUNTIES as readonly string[]).includes(r.key) || r.companies > 0);
+
   const byStaff = d.people
     .filter((p) => filters.staff_id === null || filters.staff_id === p.id)
     .map((p) => countRow(p.id, personName(p.email), collect(d, ix, range, today, { category: filters.category_id, staff: p.id })))
@@ -489,6 +518,7 @@ export function buildReport(d: ReportData, range: ResolvedRange, filters: Report
     trend: { bucket: weekly ? "week" : "day", points: starts.map((s) => points.get(s)!) },
     activityByType,
     byCategory,
+    byCounty,
     byStaff,
     funnel: { cohort: cohort.length, enough: enoughCohort, steps: funnelSteps },
     opportunityFunnel: { cohort: oppCohort.length, enough: enoughOpp, steps: oppSteps },

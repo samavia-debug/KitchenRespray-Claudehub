@@ -34,6 +34,7 @@ import * as undoRoute from "../../app/api/crm/import/batches/[id]/undo/route";
 import * as exportRoute from "../../app/api/crm/export/route";
 import * as reportRoute from "../../app/api/crm/report/route";
 import * as pipelineRoute from "../../app/api/crm/pipeline/route";
+import * as bulkRoute from "../../app/api/crm/companies/bulk/route";
 
 const tables = fake.tables;
 const JOANNA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -366,6 +367,58 @@ describe("11. User permissions work", () => {
     expect((await companiesRoute.GET(req("companies"))).status).toBe(403);
     state.user = null;
     expect((await companiesRoute.GET(req("companies"))).status).toBe(401);
+  });
+});
+
+describe("Territories: the Leinster counties", () => {
+  it("keeps each company under one county, however it was typed, and shows every county side by side", async () => {
+    await newCompany({ name: "Ace Roofing Ltd", county: "Co. Carlow" });
+    await newCompany({ name: "Riverside Hotel", county: "kilkenny" });
+    await newCompany({ name: "Dublin Fit-Out", county: "Dublin 6W" });
+    await newCompany({ name: "Cork Joinery", county: "Cork" });
+    await newCompany({ name: "No County Ltd" });
+
+    // The list can be filtered to one county, to none, or to all.
+    const names = async (qs: string) => (await json(await companiesRoute.GET(req(`companies?${qs}`)))).companies.map((c: any) => c.name).sort();
+    expect(await names("county=Carlow")).toEqual(["Ace Roofing Ltd"]);
+    expect(await names("county=Dublin")).toEqual(["Dublin Fit-Out"]);
+    expect(await names("county=Outside%20Leinster")).toEqual(["Cork Joinery"]);
+    expect(await names("county=none")).toEqual(["No County Ltd"]);
+
+    // Every county is listed, with the ones that have nothing in them showing zero.
+    as("philip");
+    const report = await json(await reportRoute.GET(req("report?range=this_month")));
+    const byCounty = Object.fromEntries(report.byCounty.map((r: any) => [r.label, r.companies]));
+    expect(byCounty).toMatchObject({ Carlow: 1, Dublin: 1, Kilkenny: 1, Laois: 0, Wexford: 0, "Outside Leinster": 1, "No county set": 1 });
+    expect(report.byCounty.slice(0, 12).map((r: any) => r.label)).toEqual(["Carlow", "Dublin", "Kildare", "Kilkenny", "Laois", "Longford", "Louth", "Meath", "Offaly", "Westmeath", "Wexford", "Wicklow"]);
+  });
+
+  it("refuses something that is not a county, and can fix many companies at once", async () => {
+    const bad = await companiesRoute.POST(req("companies", "POST", { name: "Narnia Ltd", county: "Narnia" }));
+    expect(bad.status).toBe(400);
+    expect((await json(bad)).error).toMatch(/Leinster/);
+
+    const a = await newCompany({ name: "Ace Roofing Ltd" });
+    const b = await newCompany({ name: "Murphy Builders" });
+    const fixed = await bulkRoute.POST(req("companies/bulk", "POST", { ids: [a, b], action: "county", value: "Wexford", confirmed: true }));
+    expect(fixed.status).toBe(200);
+    expect((await json(fixed)).updated).toBe(2);
+    expect((await json(await companiesRoute.GET(req("companies?county=Wexford")))).total).toBe(2);
+  });
+
+  it("counts sales and open opportunities under the right county", async () => {
+    const id = await newCompany({ name: "Ace Roofing Ltd", county: "Louth" });
+    const opp = await json(await opportunitiesRoute.POST(req("opportunities", "POST", { company_id: id, title: "Yard doors", estimated_value: 4000, source: "Direct prospecting" })));
+    as("philip");
+    let report = await json(await reportRoute.GET(req("report?range=this_month")));
+    expect(report.byCounty.find((r: any) => r.label === "Louth")).toMatchObject({ openOpportunities: 1, openEstimate: 4000, won: 0, wonValue: 0 });
+
+    as("joanna");
+    await opportunityStatusRoute.POST(req(`opportunities/${opp.id}/status`, "POST", { status: "won", confirmed: true, won_value: 3800 }), ctx(opp.id));
+    as("philip");
+    report = await json(await reportRoute.GET(req("report?range=this_month")));
+    expect(report.byCounty.find((r: any) => r.label === "Louth")).toMatchObject({ openOpportunities: 0, won: 1, wonValue: 3800 });
+    expect(report.byCounty.find((r: any) => r.label === "Carlow")).toMatchObject({ won: 0, wonValue: 0 });
   });
 });
 

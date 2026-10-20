@@ -222,6 +222,8 @@ export async function companyFilter(db: Db, q: CompanyQuery) {
       query = query.or(clauses.join(","));
     }
     if (q.location) query = query.or(["city", "county", "address", "postcode"].map((f) => `${f}.ilike.%${q.location}%`).join(","));
+    if (q.county === "none") query = query.is("county", null);
+    else if (q.county) query = query.eq("county", q.county);
     if (q.category_id) query = query.eq("category_id", q.category_id);
     if (q.stage_id) query = query.eq("stage_id", q.stage_id);
     if (q.assigned_to === "none") query = query.is("assigned_to", null);
@@ -405,7 +407,8 @@ export async function bulkUpdate(change: BulkChange, userId: string): Promise<{ 
     if (!data) return { error: "That category is not available" };
   }
 
-  const patch = { [change.action === "assign" ? "assigned_to" : "category_id"]: change.value, updated_by: userId, updated_at: new Date().toISOString() };
+  const column = change.action === "assign" ? "assigned_to" : change.action === "county" ? "county" : "category_id";
+  const patch = { [column]: change.value, updated_by: userId, updated_at: new Date().toISOString() };
   const { data, error } = await db.from("crm_companies").update(patch).in("id", change.ids).is("archived_at", null).select("id");
   if (error) fail(error, "Could not apply the change");
   await logEvent(db, userId, `bulk_${change.action}`, "company", null, { count: data?.length ?? 0 });

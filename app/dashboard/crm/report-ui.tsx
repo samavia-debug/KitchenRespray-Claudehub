@@ -3,10 +3,10 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { addDays, dublinToday } from "@/lib/crm/followups";
-import type { DrillRow, FunnelStep, MetricValue, ReportResult } from "@/lib/crm/reports";
+import type { DrillRow, FunnelStep, MetricValue, ReportResult, TerritoryRow } from "@/lib/crm/reports";
 import { api } from "./api";
 import { useCrm } from "./crm-context";
-import { fmtDate, fmtDateTime, personName } from "./fmt";
+import { fmtDate, fmtDateTime, fmtMoney, personName } from "./fmt";
 
 export type Controls = { range: string; from: string; to: string; category: string; staff: string };
 
@@ -260,6 +260,77 @@ export function TrendBars({ points, field, label, bucket }: { points: { date: st
         <span>peak {max === 1 && total === 0 ? 0 : max}</span>
         <span>{fmt(points[points.length - 1]?.date)}</span>
       </div>
+    </div>
+  );
+}
+
+/**
+ * One row per county. The first columns are how things stand now (whatever the period); the last four are for the period
+ * chosen above. A county's name opens the company list for that county.
+ */
+export function TerritoryTable({ rows, linked = true }: { rows: TerritoryRow[]; linked?: boolean }) {
+  const total = (f: (r: TerritoryRow) => number) => rows.reduce((n, r) => n + f(r), 0);
+  const wrap = { whiteSpace: "normal" as const };
+  const dim = (r: TerritoryRow) => (r.companies === 0 ? { color: "var(--muted)" } : undefined);
+  return (
+    <div className="table-wrap">
+      <table className="data-table">
+        <thead>
+          <tr>
+            <th>County</th>
+            <th style={wrap}>Companies</th>
+            <th style={wrap}>Not contacted yet</th>
+            <th style={wrap}>Follow-ups overdue</th>
+            <th style={wrap}>Due today</th>
+            <th style={wrap}>Open opportunities</th>
+            <th style={wrap}>Contacts made</th>
+            <th style={wrap}>Added</th>
+            <th>Won</th>
+            <th style={wrap}>Confirmed sales</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.key} style={{ cursor: "default", ...dim(r) }}>
+              <td style={{ fontWeight: 600 }}>
+                {linked && r.companies > 0 ? (
+                  <Link href={`/dashboard/crm/companies?county=${encodeURIComponent(r.key)}`} title={`See the companies in ${r.label}`}>
+                    {r.label}
+                  </Link>
+                ) : (
+                  r.label
+                )}
+              </td>
+              <td>{r.companies}</td>
+              <td>{r.awaitingContact}</td>
+              <td style={{ color: r.overdue > 0 ? "var(--critical)" : undefined, fontWeight: r.overdue > 0 ? 600 : undefined }}>{r.overdue}</td>
+              <td>{r.dueToday}</td>
+              <td title={r.openOpportunities ? `Estimated ${fmtMoney(r.openEstimate)}. An estimate is a guess, not sales.` : undefined}>
+                {r.openOpportunities}
+                {r.openEstimate > 0 && <span style={{ color: "var(--muted)", fontSize: "0.78rem" }}> ({fmtMoney(r.openEstimate)})</span>}
+              </td>
+              <td>{r.contactsMade}</td>
+              <td>{r.added}</td>
+              <td>{r.won}</td>
+              <td>{r.wonValue ? fmtMoney(r.wonValue) : "—"}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr style={{ fontWeight: 700, borderTop: "2px solid var(--border)" }}>
+            <td>All counties</td>
+            <td>{total((r) => r.companies)}</td>
+            <td>{total((r) => r.awaitingContact)}</td>
+            <td>{total((r) => r.overdue)}</td>
+            <td>{total((r) => r.dueToday)}</td>
+            <td>{total((r) => r.openOpportunities)}</td>
+            <td>{total((r) => r.contactsMade)}</td>
+            <td>{total((r) => r.added)}</td>
+            <td>{total((r) => r.won)}</td>
+            <td>{total((r) => r.wonValue) ? fmtMoney(total((r) => r.wonValue)) : "—"}</td>
+          </tr>
+        </tfoot>
+      </table>
     </div>
   );
 }

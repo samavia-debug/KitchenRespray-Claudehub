@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import { PRIORITIES, type DuplicateMatch } from "@/lib/crm/types";
+import { COUNTY_CHOICES } from "@/lib/crm/territories";
 import type { ApiResult } from "./api";
 import { useCrm } from "./crm-context";
 import { personName } from "./fmt";
@@ -125,7 +126,15 @@ export default function CompanyForm({
         {input("email", "General email", { type: "email", max: 200 })}
         {input("address", "Address", { max: 300 })}
         {input("city", "Town or city", { max: 100 })}
-        {input("county", "County", { max: 100 })}
+        <div className="field">
+          <label>County</label>
+          <select value={v.county} onChange={set("county")}>
+            <option value="">Not set</option>
+            {COUNTY_CHOICES.map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+        </div>
         {input("postcode", "Postcode", { max: 20 })}
         {input("country", "Country", { max: 80 })}
       </div>
