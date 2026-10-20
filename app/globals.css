@@ -428,3 +428,140 @@ button {
     min-height: 0 !important;
   }
 }
+
+/* Trade Sales CRM */
+.tabs a {
+  background: none;
+  border: none;
+  padding: 0.65rem 0.9rem;
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  text-decoration: none;
+  transition: color 0.12s ease, border-color 0.12s ease;
+}
+
+.tabs a:hover {
+  color: var(--ink);
+}
+
+.tabs a.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
+.crm-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.6rem;
+  align-items: end;
+}
+
+.crm-filters .field {
+  margin: 0;
+}
+
+.crm-board {
+  display: flex;
+  gap: 0.75rem;
+  overflow-x: auto;
+  padding-bottom: 0.75rem;
+  align-items: flex-start;
+}
+
+.crm-column {
+  flex: 0 0 250px;
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.6rem;
+  min-height: 120px;
+}
+
+.crm-column.drop {
+  outline: 2px dashed var(--accent);
+}
+
+.crm-column h3 {
+  font-size: 0.82rem;
+  margin: 0 0 0.5rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.crm-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 0.55rem 0.65rem;
+  margin-bottom: 0.5rem;
+  font-size: 0.82rem;
+  cursor: grab;
+}
+
+.crm-card a {
+  font-weight: 600;
+  color: inherit;
+  text-decoration: none;
+}
+
+.crm-card a:hover {
+  text-decoration: underline;
+}
+
+.crm-card select {
+  margin-top: 0.4rem;
+  padding: 0.25rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.crm-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  z-index: 50;
+}
+
+.crm-modal > div {
+  background: var(--card);
+  border-radius: 12px;
+  padding: 1.5rem;
+  width: 100%;
+  max-width: 460px;
+  box-shadow: var(--shadow-md);
+}
+
+.crm-pager {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  margin-top: 0.9rem;
+  flex-wrap: wrap;
+  font-size: 0.85rem;
+}
+
+.crm-form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.75rem;
+}
+
+.crm-form-grid .field {
+  margin: 0;
+}
+
+.crm-form-grid .wide-field {
+  grid-column: 1 / -1;
+}
+
+a.btn {
+  text-decoration: none;
+}

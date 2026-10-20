@@ -94,6 +94,8 @@ export default function SidebarNav() {
 
   const isAdmin = role === "Admin";
   const isManagerOrAbove = role === "Admin" || role === "Manager";
+  // Joanna and Sajad work in the CRM as Staff; Viewers have no access to it.
+  const canUseCrm = role === "Admin" || role === "Manager" || role === "Staff";
 
   const liveLinks = [
     { href: "/dashboard", label: "Overview" },
@@ -108,6 +110,7 @@ export default function SidebarNav() {
     ...(isAdmin ? [{ href: "/dashboard/operations", label: "📊 Operations" }] : []),
     ...(isAdmin ? [{ href: "/dashboard/connecteam", label: "👥 Connecteam" }] : []),
     ...(isAdmin ? [{ href: "/dashboard/letters", label: "✉️ Letter Writer" }] : []),
+    ...(canUseCrm ? [{ href: "/dashboard/crm", label: "🤝 Trade Sales CRM" }] : []),
     ...(isManagerOrAbove ? [{ href: "/dashboard/knowledge", label: "Company Knowledge" }] : []),
     ...(isAdmin ? [{ href: "/dashboard/settings", label: "Settings" }] : []),
   ];
