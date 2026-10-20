@@ -28,6 +28,12 @@ export default function SidebarNav() {
   const supabase = createClient();
   const [role, setRole] = useState<string | null>(null);
   const [syncFreshness, setSyncFreshness] = useState<SyncFreshness | null>(null);
+
+  // On a phone the menu opens over the page; close it once a link has been followed.
+  useEffect(() => {
+    const toggle = document.getElementById("nav-toggle") as HTMLInputElement | null;
+    if (toggle) toggle.checked = false;
+  }, [pathname]);
   const [syncTooltip, setSyncTooltip] = useState<string>("Checking sync status...");
 
   useEffect(() => {

@@ -19,12 +19,17 @@ export default async function DashboardLayout({
 
   return (
     <div className="app-shell">
+      {/* On a phone the menu is hidden until this is ticked by the Menu button (see globals.css). */}
+      <input type="checkbox" id="nav-toggle" className="nav-toggle" aria-label="Show the menu" />
       <aside className="sidebar">
         <div className="brand">KitchenRespray Hub</div>
         <SidebarNav />
       </aside>
       <div style={{ flex: 1 }}>
         <div className="topbar">
+          <label htmlFor="nav-toggle" className="menu-btn btn btn-secondary">
+            ☰ Menu
+          </label>
           <SignOutButton />
         </div>
         <main className="main-area">{children}</main>

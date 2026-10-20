@@ -370,7 +370,7 @@ describe("11. User permissions work", () => {
 });
 
 describe("12. The rest of the dashboard is untouched", () => {
-  it("changed nothing outside the CRM except the sidebar link, shared styles and one exported helper", async () => {
+  it("changed nothing outside the CRM except the menu, shared styles and one exported helper", async () => {
     const { execFileSync } = await import("child_process");
     let out: string[];
     try {
@@ -380,7 +380,7 @@ describe("12. The rest of the dashboard is untouched", () => {
       return; // no git history here (for example a shallow copy), so there is nothing to compare against
     }
     // Anything else changed since the CRM began is a change to a module the brief said not to touch (later, deliberate work adds to the list).
-    expect(out.filter((f) => ![".gitignore", "app/dashboard/sidebar-nav.tsx", "app/globals.css", "lib/letters/prompt.ts"].includes(f))).toEqual([]);
+    expect(out.filter((f) => ![".gitignore", "app/dashboard/layout.tsx", "app/dashboard/sidebar-nav.tsx", "app/globals.css", "lib/letters/prompt.ts"].includes(f))).toEqual([]);
   });
 });
 
