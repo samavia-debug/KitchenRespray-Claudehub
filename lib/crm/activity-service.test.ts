@@ -299,6 +299,21 @@ describe("opportunities", () => {
     expect((await listOpportunities(CO)).map((o) => o.title).sort()).toEqual(["Hotel bedroom doors", "Reception desk"]);
   });
 
+  it("keeps each status change as it happens, so reports can count quotes sent in a period", async () => {
+    const id = await opp();
+    await setOpportunityStatus(id, { status: "quote_sent", confirmed: false, outcome_note: null, won_value: null }, JOANNA);
+    await setOpportunityStatus(id, { status: "won", confirmed: true, outcome_note: null, won_value: 9000 }, SAJAD);
+    expect(tables.crm_opportunity_history.map((h) => [h.from_status, h.to_status, h.user_id])).toEqual([
+      [null, "identified", JOANNA],
+      ["identified", "quote_sent", JOANNA],
+      ["quote_sent", "won", SAJAD],
+    ]);
+    // A refused change leaves no history behind.
+    await setOpportunityStatus(id, { status: "won", confirmed: true, outcome_note: null, won_value: null }, JOANNA);
+    expect(tables.crm_opportunity_history).toHaveLength(3);
+    expect(tables.crm_opportunity_history.every((h) => h.opportunity_id === id)).toBe(true);
+  });
+
   it("refuses a missing company and an assignee who is not on the team", async () => {
     expect(await createOpportunity({ company_id: "nope", title: "x" }, JOANNA)).toEqual({ notFound: true });
     expect(await createOpportunity({ company_id: CO, title: "x", assigned_to: "user-viewer" }, JOANNA)).toHaveProperty("error");

@@ -7,16 +7,7 @@ export const fmtDate = (v: string | null | undefined) => (v ? dateFmt.format(new
 export const fmtDateTime = (v: string | null | undefined) => (v ? dateTimeFmt.format(new Date(v)) : "—");
 export const fmtMoney = (v: number | null | undefined) => (v === null || v === undefined ? "—" : Number.isInteger(Number(v)) ? moneyFmt.format(Number(v)) : moneyFmtCents.format(Number(v)));
 
-/** "joanna.byrne@x.ie" -> "Joanna Byrne" (the team is identified by email in this dashboard). */
-export function personName(email: string | null | undefined): string {
-  if (!email) return "Unassigned";
-  return email
-    .split("@")[0]
-    .split(/[._-]+/)
-    .filter(Boolean)
-    .map((w) => w[0].toUpperCase() + w.slice(1))
-    .join(" ");
-}
+export { personName } from "@/lib/crm/names";
 
 /**
  * A link that opens a WhatsApp chat with this number (nothing is sent: the person writes and sends the message).

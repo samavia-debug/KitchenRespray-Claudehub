@@ -4,11 +4,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { CrmProvider, useCrm } from "./crm-context";
 
-const LINKS = [
+const LINKS: { href: string; label: string; adminOnly?: boolean; managerOnly?: boolean; exact?: boolean }[] = [
+  { href: "/dashboard/crm", label: "Overview", exact: true },
   { href: "/dashboard/crm/companies", label: "Companies" },
   { href: "/dashboard/crm/follow-ups", label: "Follow-ups" },
   { href: "/dashboard/crm/contacts", label: "Contacts" },
   { href: "/dashboard/crm/pipeline", label: "Sales Pipeline" },
+  { href: "/dashboard/crm/reports", label: "Reports", managerOnly: true },
   { href: "/dashboard/crm/import", label: "Import and Export" },
   { href: "/dashboard/crm/settings", label: "Settings", adminOnly: true },
 ];
@@ -24,14 +26,14 @@ function Shell({ children }: { children: React.ReactNode }) {
         <p>Commercial prospects: hotels, facility managers, estate agents, builders and trades. Find them, contact them, follow up, and see what turns into work.</p>
       </div>
 
-      {setupNeeded && <p className="error-text">The CRM tables are not set up yet. Run the trade_crm migration in Supabase, then reload this page.</p>}
+      {setupNeeded && <p className="error-text">The CRM tables are not set up yet. Run the CRM migrations in Supabase, then reload this page.</p>}
       {error && !setupNeeded && <p className="error-text">{error}</p>}
 
       {meta ? (
         <>
           <nav className="tabs" aria-label="Trade Sales CRM">
-            {LINKS.filter((l) => !l.adminOnly || meta.role === "Admin").map((l) => (
-              <Link key={l.href} href={l.href} className={pathname.startsWith(l.href) ? "active" : ""}>
+            {LINKS.filter((l) => (!l.adminOnly || meta.role === "Admin") && (!l.managerOnly || meta.role === "Admin" || meta.role === "Manager")).map((l) => (
+              <Link key={l.href} href={l.href} className={(l.exact ? pathname === l.href : pathname.startsWith(l.href)) ? "active" : ""}>
                 {l.label}
               </Link>
             ))}

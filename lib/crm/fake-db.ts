@@ -38,6 +38,13 @@ function split(str: string): string[] {
 
 const likeToRegex = (pat: string, flags = "") => new RegExp(`^${pat.replace(/[.*+?^${}()|[\]\\]/g, "\\$&").replace(/%/g, ".*")}$`, flags);
 
+/** Compares two timestamps as moments, so "+00:00" and "Z" spellings of the same instant are equal. */
+function cmp(a: any, b: any): number {
+  const x = typeof a === "string" && /^\d{4}-\d{2}-\d{2}T/.test(a) ? Date.parse(a) : a;
+  const y = typeof b === "string" && /^\d{4}-\d{2}-\d{2}T/.test(b) ? Date.parse(b) : b;
+  return x < y ? -1 : x > y ? 1 : 0;
+}
+
 /** Reads "company.archived_at" from a row that has the related company attached. */
 const get = (row: Row, path: string) => path.split(".").reduce<any>((v, k) => (v === null || v === undefined ? v : v[k]), row);
 
@@ -146,8 +153,10 @@ export function fakeFrom(table: string) {
     is(c: string, v: any) { q.preds.push((r: Row) => (v === null ? get(r, c) === null || get(r, c) === undefined : get(r, c) === v)); return api; },
     in(c: string, vs: any[]) { q.preds.push((r: Row) => vs.includes(get(r, c))); return api; },
     ilike(c: string, p: string) { q.preds.push((r: Row) => typeof get(r, c) === "string" && likeToRegex(p, "i").test(get(r, c))); return api; },
-    gte(c: string, v: any) { q.preds.push((r: Row) => get(r, c) !== null && get(r, c) !== undefined && get(r, c) >= v); return api; },
-    lte(c: string, v: any) { q.preds.push((r: Row) => get(r, c) !== null && get(r, c) !== undefined && get(r, c) <= v); return api; },
+    gt(c: string, v: any) { q.preds.push((r: Row) => get(r, c) !== null && get(r, c) !== undefined && cmp(get(r, c), v) > 0); return api; },
+    lt(c: string, v: any) { q.preds.push((r: Row) => get(r, c) !== null && get(r, c) !== undefined && cmp(get(r, c), v) < 0); return api; },
+    gte(c: string, v: any) { q.preds.push((r: Row) => get(r, c) !== null && get(r, c) !== undefined && cmp(get(r, c), v) >= 0); return api; },
+    lte(c: string, v: any) { q.preds.push((r: Row) => get(r, c) !== null && get(r, c) !== undefined && cmp(get(r, c), v) <= 0); return api; },
     or(s: string) { q.preds.push((r: Row) => split(s).some((c) => test(r, c))); return api; },
     order(c: string, o?: { ascending?: boolean }) { q.order.push([c, o?.ascending !== false]); return api; },
     range(a: number, b: number) { q.range = [a, b]; return api; },

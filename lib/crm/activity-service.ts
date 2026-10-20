@@ -335,6 +335,12 @@ export async function listOpportunities(companyId: string): Promise<Opportunity[
   return (data ?? []).map(toOpportunity);
 }
 
+/** Keeps each status change as it happens, so reports can say how many quotes were sent in a period. */
+async function recordOpportunityStatus(db: Db, opportunityId: string, from: string | null, to: string, userId: string, at: string) {
+  const { error } = await db.from("crm_opportunity_history").insert({ opportunity_id: opportunityId, from_status: from, to_status: to, user_id: userId, created_at: at });
+  if (error) fail(error, "The opportunity was saved but its history could not be recorded");
+}
+
 export async function createOpportunity(input: Partial<OpportunityFields> & { company_id: string; title: string }, userId: string): Promise<{ id: string } | { notFound: true } | { error: string }> {
   const db = createServiceClient();
   if (!(await activeCompany(db, input.company_id))) return { notFound: true };
@@ -347,6 +353,7 @@ export async function createOpportunity(input: Partial<OpportunityFields> & { co
     .select("id")
     .single();
   if (error) fail(error, "Could not save the opportunity");
+  await recordOpportunityStatus(db, data.id, null, "identified", userId, now);
   await logEvent(db, userId, "opportunity_created", "opportunity", data.id);
   return { id: data.id };
 }
@@ -398,6 +405,7 @@ export async function setOpportunityStatus(id: string, change: OpportunityStatus
     })
     .eq("id", id);
   if (error) fail(error, "Could not change the status");
+  await recordOpportunityStatus(db, id, current.status, change.status, userId, now);
   await logEvent(db, userId, "opportunity_status", "opportunity", id, { to: change.status });
   return { ok: true };
 }
