@@ -35,6 +35,8 @@ import * as exportRoute from "../../app/api/crm/export/route";
 import * as reportRoute from "../../app/api/crm/report/route";
 import * as pipelineRoute from "../../app/api/crm/pipeline/route";
 import * as bulkRoute from "../../app/api/crm/companies/bulk/route";
+import * as specialsRoute from "../../app/api/crm/specials/route";
+import * as specialRoute from "../../app/api/crm/specials/[id]/route";
 
 const tables = fake.tables;
 const JOANNA = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
@@ -419,6 +421,72 @@ describe("Territories: the Leinster counties", () => {
     report = await json(await reportRoute.GET(req("report?range=this_month")));
     expect(report.byCounty.find((r: any) => r.label === "Louth")).toMatchObject({ openOpportunities: 0, won: 1, wonValue: 3800 });
     expect(report.byCounty.find((r: any) => r.label === "Carlow")).toMatchObject({ won: 0, wonValue: 0 });
+  });
+});
+
+describe("Specials: offers that differ by county and by time", () => {
+  const day = (n: number) => addDays(today(), n);
+  const make = async (body: Record<string, unknown>) => {
+    const res = await specialsRoute.POST(req("specials", "POST", { title: "Kilkenny spring offer", offer: "15% off kitchen doors", starts_on: day(-3), ends_on: day(20), ...body }));
+    return { res, out: await json(res) };
+  };
+  const list = async (qs = "") => json(await specialsRoute.GET(req(`specials${qs}`)));
+
+  it("lets a Manager set a special up, and shows it to Staff for the right county only", async () => {
+    as("philip");
+    expect((await make({ county: "co. kilkenny" })).res.status).toBe(200);
+    expect((await make({ title: "Carlow offer", offer: "10% off", county: "Carlow" })).res.status).toBe(200);
+    expect((await make({ title: "Everywhere", offer: "Trade prices", county: "" })).res.status).toBe(200);
+
+    as("joanna");
+    expect((await list("")).specials).toHaveLength(3);
+    const kilkenny = (await list("?running=1&county=Kilkenny")).specials.map((s: any) => s.title).sort();
+    expect(kilkenny).toEqual(["Everywhere", "Kilkenny spring offer"]);
+    expect((await list("?running=1&county=Wexford")).specials.map((s: any) => s.title)).toEqual(["Everywhere"]);
+    expect((await list("?results=1")).results).toBeUndefined(); // results are for Admin and Manager
+  });
+
+  it("does not let Staff create, change or delete one", async () => {
+    as("philip");
+    const { out } = await make({ county: "Kilkenny" });
+    as("joanna");
+    expect((await specialsRoute.POST(req("specials", "POST", { title: "x", offer: "y", starts_on: day(0) }))).status).toBe(403);
+    expect((await specialRoute.PATCH(req(`specials/${out.id}`, "PATCH", { active: false }), ctx(out.id))).status).toBe(403);
+    expect((await specialRoute.DELETE(req(`specials/${out.id}`, "DELETE"), ctx(out.id))).status).toBe(403);
+  });
+
+  it("refuses a county outside Leinster, an end before the start, and a missing offer, and says why", async () => {
+    as("philip");
+    for (const [bad, message] of [[{ county: "Cork" }, /Leinster/], [{ ends_on: day(-9) }, /end date/i], [{ offer: "" }, /offer/i], [{ title: "" }, /title/i]] as const) {
+      const { res, out } = await make(bad);
+      expect(res.status, JSON.stringify(bad)).toBe(400);
+      expect(out.error).toMatch(message);
+    }
+    expect((await list("")).specials).toHaveLength(0);
+  });
+
+  it("can be switched off, which takes it out of what is running, and deleted", async () => {
+    as("philip");
+    const { out } = await make({ county: "Kilkenny" });
+    expect((await list("?running=1&county=Kilkenny")).specials).toHaveLength(1);
+    expect((await specialRoute.PATCH(req(`specials/${out.id}`, "PATCH", { active: false }), ctx(out.id))).status).toBe(200);
+    expect((await list("?running=1&county=Kilkenny")).specials).toHaveLength(0);
+    expect((await list("")).specials).toHaveLength(1); // still kept, with its results
+    expect((await specialRoute.DELETE(req(`specials/${out.id}`, "DELETE"), ctx(out.id))).status).toBe(200);
+    expect((await specialRoute.DELETE(req(`specials/${out.id}`, "DELETE"), ctx(out.id))).status).toBe(404);
+  });
+
+  it("shows a Manager what happened in the county while it ran, next to the days before", async () => {
+    as("joanna");
+    const id = await newCompany({ name: "Riverside Joinery", county: "Kilkenny" });
+    await activitiesRoute.POST(req("activities", "POST", { company_id: id, type: "WhatsApp message" }));
+    as("philip");
+    await make({ county: "Kilkenny", starts_on: day(-4), ends_on: null });
+    const { results, specials } = await list("?results=1");
+    const r = results[specials[0].id];
+    expect(r.days).toBe(5);
+    expect(r.during.counts).toMatchObject({ contactsMade: 1, contacted: 1 });
+    expect(r.before.counts).toMatchObject({ contactsMade: 0, contacted: 0 });
   });
 });
 

@@ -52,6 +52,10 @@ const CASES: Case[] = [
   { route: "activities", method: "GET", need: "access", url: `?company_id=${ID}` },
   { route: "activities", method: "POST", need: "access", body: {} },
   { route: "activities/bulk", method: "POST", need: "access", body: {} },
+  { route: "specials", method: "GET", need: "access" },
+  { route: "specials", method: "POST", need: "overseer", body: {} },
+  { route: "specials/[id]", method: "PATCH", need: "overseer", params: { id: ID }, body: { title: "x" } },
+  { route: "specials/[id]", method: "DELETE", need: "overseer", params: { id: ID } },
   { route: "activities/[id]", method: "DELETE", need: "overseer", params: { id: ID } },
   { route: "tasks", method: "GET", need: "access" },
   { route: "tasks", method: "POST", need: "access", body: {} },
@@ -144,7 +148,7 @@ describe("the people who work in the CRM", () => {
     const refused = CASES.filter((c) => !MAY[c.need].includes("Staff")).map((c) => `${c.method} ${c.route}`);
     expect(refused.sort()).toEqual(
       [
-        "DELETE activities/[id]", "DELETE companies/[id]", "DELETE companies/[id]", "DELETE contacts/[id]", "DELETE opportunities/[id]", "POST export",
+        "DELETE activities/[id]", "DELETE companies/[id]", "DELETE companies/[id]", "DELETE contacts/[id]", "DELETE opportunities/[id]", "DELETE specials/[id]", "PATCH specials/[id]", "POST export", "POST specials",
         "POST import/batches/[id]/undo", "POST settings", "GET ai/settings", "PUT ai/settings",
       ].sort()
     );

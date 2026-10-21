@@ -131,7 +131,7 @@ checked for every route by `lib/crm/permissions.test.ts`.
 
 **Setup** — run these in the Supabase SQL editor, in order (each is safe to run twice):
 `20261020100000_trade_crm.sql`, `20261021100000_crm_activities_tasks.sql`, `20261022100000_crm_import.sql`,
-`20261023100000_crm_reports.sql`, `20261024100000_crm_ai.sql`, `20261025100000_crm_territories.sql`, `20261026100000_crm_whatsapp_activity.sql`. The CRM tables have row-level security on and no policy,
+`20261023100000_crm_reports.sql`, `20261024100000_crm_ai.sql`, `20261025100000_crm_territories.sql`, `20261026100000_crm_whatsapp_activity.sql`, `20261027100000_crm_specials.sql`. The CRM tables have row-level security on and no policy,
 so they are reachable only through the server routes (which check the role). Environment variables: `ANTHROPIC_API_KEY`
 (already used elsewhere; only the AI tools need it) and, optionally, `CRM_AI_DAILY_LIMIT` (AI requests per person per day,
 default 40). No other service, key or recurring cost is involved.
@@ -141,6 +141,8 @@ default 40). No other service, key or recurring cost is involved.
 `app/dashboard/crm/` (screens).
 
 **Territories** — a company's county is one of the twelve Leinster counties, "Outside Leinster", or not set (`lib/crm/territories.ts`). Typed or imported spellings ("Co. Carlow", "Dublin 6W") are tidied to the fixed list; anything that is not a county is refused (or, on import, left out with a warning and kept on the company). The Territories tab and the "By county" report show every county side by side, and the company list can be filtered, and bulk-updated, by county. The 20261025 migration tidies existing records and makes the database enforce the list.
+
+**Specials** — an offer for one county (or all of them) between two dates, with the exact wording to use and an optional code. Admin and Manager set them up on the Territories tab; everyone sees what is running (in the territory table, and on a company's page for its county). The message drafter is given the offers running where the company is and may state only those, as written; a percentage or euro amount in a draft that is in neither the approved wording nor a current offer is flagged for checking. Each special shows what happened in its county while it ran next to the same number of days before it (the same counting as the reports; it shows what happened alongside, not what caused it). Switching a special off keeps its results; deleting removes them.
 
 **Logging outreach in bulk** — WhatsApp message and WhatsApp follow-up are activity types. On the Companies list, tick companies (or use *Select all N that match*, up to 200) and choose *Log activity* to record one message against all of them, with the day it was really sent, its wording, and an optional follow-up for each. A company that already has that kind of activity on that day is skipped, so a second click cannot log it twice.
 

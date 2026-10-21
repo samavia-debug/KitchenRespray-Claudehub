@@ -7,8 +7,9 @@ import { phoneKey } from "../normalize";
 import { dublinDayStart, resolveRange, type ResolvedRange } from "../report-range";
 import { loadReportData } from "../report-service";
 import { getCompany, logEvent, type Db } from "../service";
+import { specialsRunningFor } from "../specials-service";
 import { PublicError } from "../errors";
-import { buildSalesPack, draftFacts, nextStepFacts, ourCompanyFacts, researchRecord, type AiSettings } from "./facts";
+import { buildSalesPack, currentOffers, draftFacts, nextStepFacts, ourCompanyFacts, researchRecord, type AiSettings } from "./facts";
 import {
   ASK_SYSTEM,
   DRAFT_SYSTEM,
@@ -17,6 +18,7 @@ import {
   parseNextSteps,
   parseResearch,
   RESEARCH_SYSTEM,
+  unsupportedFigures,
   type MessageDraft,
   type NextSteps,
   type Research,
@@ -149,11 +151,15 @@ export async function draftMessage(input: DraftInput, userId: string): Promise<(
     tone: clean(settings.tone, 300) || "(none set)",
     avoid: clean(settings.avoid, 600) || "(none set)",
   };
-  const facts = draftFacts({ company: loaded.company, contact, activities: loaded.activities, today: dublinToday(), kind: input.kind });
+  const today = dublinToday();
+  const facts = draftFacts({ company: loaded.company, contact, activities: loaded.activities, today, kind: input.kind });
+  // The offers running now where this company is. A failure to read them means no offer is made, not that the draft fails.
+  const offers = currentOffers(await specialsRunningFor(loaded.company.county, today, db).catch(() => []));
 
   const user = [
     block("prospect_facts", JSON.stringify(facts)),
     block("our_company", JSON.stringify(ourCompanyFacts(letterhead))),
+    block("current_offers", offers.length ? JSON.stringify(offers) : "(none running)"),
     block("approved_wording", `About us (facts a message may state):\n${wording.about_us}\n\nApproved template:\n${wording.template}\n\nTone:\n${wording.tone}\n\nNever say or promise:\n${wording.avoid}`),
     block("request", `Channel: ${input.channel}\nStaff instructions: ${clean(input.instructions, 600) || "(none)"}`),
   ].join("\n\n");
@@ -162,6 +168,10 @@ export async function draftMessage(input: DraftInput, userId: string): Promise<(
   if (isFailure(reply)) return reply;
   const draft = parseMessageDraft(reply.text, input.channel);
   if (!draft) return fail("The AI gave a draft that could not be used. Please try again.", 502);
+  // A percentage or amount that is in neither the approved wording nor a current offer was not given to the writer.
+  const allowed = [wording.about_us, wording.template, ...offers.map((o) => `${o.title} ${o.offer} ${o.code ?? ""}`)].join("\n");
+  const invented = unsupportedFigures(`${draft.subject}\n${draft.body}`, allowed).map((f) => `The message mentions "${f}", which is not in your approved wording or the current offers. Check it before sending.`);
+  draft.missing = [...invented, ...draft.missing].slice(0, 10);
   return { ...draft, remaining: reply.remaining, usedTemplate: !!settings.intro_template?.trim(), wordingSet: !!(settings.about_us?.trim() || settings.intro_template?.trim()) };
 }
 

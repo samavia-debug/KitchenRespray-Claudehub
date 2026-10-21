@@ -35,7 +35,8 @@ Reply with JSON only, no other text, in exactly this shape:
 export const DRAFT_SYSTEM = `You draft a short business message from Kitchen Respray, an Irish kitchen respraying company, to a business contact. A member of staff reads, edits and sends it themselves; nothing is sent automatically, so be accurate rather than persuasive.
 
 Rules you must never break:
-- Use ONLY the facts in <prospect_facts>, <our_company> and <approved_wording>. Never invent facts about the prospect or about us: no prices, discounts, guarantees, years in business, awards, past projects, customers, certifications, availability or promises, unless they are written in <approved_wording>.
+- Use ONLY the facts in <prospect_facts>, <our_company> and <approved_wording>. Never invent facts about the prospect or about us: no prices, discounts, guarantees, years in business, awards, past projects, customers, certifications, availability or promises, unless they are written in <approved_wording> or, for an offer, listed in <current_offers>.
+- <current_offers> lists the special offers running now where this prospect is. You may mention one, worded exactly as written (the same percentage, amount, code and end date), and only if it suits the message. Never combine, improve or round an offer, and never mention an offer that is not listed. If the list is empty, make no offer.
 - If <approved_wording> contains a template, follow its structure and wording closely, changing only names, the prospect's trade and details that the facts support.
 - "unverified_description" may have come from a generated summary. Do not state it as fact; leaving it out is fine.
 - If something the message needs is missing (for example our phone number, the sender's name, or a specific offer), write a placeholder in the form [CONFIRM: what is needed] and list it in "missing". Do not guess.
@@ -113,6 +114,20 @@ export function parseMessageDraft(raw: string, channel: "WhatsApp" | "Email" | "
   Array.from(body.matchAll(PLACEHOLDER)).forEach((m) => missing.add(m[1].trim().slice(0, 140)));
   if (missing.size === 0) strings(d.missing, 140, 8).forEach((m) => missing.add(m));
   return { subject: channel === "WhatsApp" ? "" : clean(d.subject, 160), body, missing: Array.from(missing).slice(0, 10) };
+}
+
+const FIGURE = /\d+(?:[.,]\d+)?\s?%|€\s?\d[\d,.]*/g;
+const plain = (f: string) => f.replace(/\s+/g, "").replace(/,(?=\d{3})/g, "").toLowerCase();
+
+/**
+ * Percentages and euro amounts in a draft that are not in the text the writer was allowed to use (the approved wording and
+ * the current offers). The model is told never to invent them; this catches it if it does anyway, so a made-up discount is
+ * flagged for the person to check before anything is sent.
+ */
+export function unsupportedFigures(body: string, allowed: string): string[] {
+  const ok = new Set((allowed.match(FIGURE) ?? []).map(plain));
+  const found = (body.match(FIGURE) ?? []).map((f) => f.trim().replace(/[.,]$/, ""));
+  return Array.from(new Set(found.filter((f) => !ok.has(plain(f)))));
 }
 
 export const unresolved = (text: string): string[] => Array.from(text.matchAll(PLACEHOLDER)).map((m) => m[1].trim());

@@ -93,6 +93,17 @@ export function draftFacts(input: { company: CompanyRow; contact: ContactRow | n
   };
 }
 
+/** The offers running now where the prospect is, as the drafter may state them: exactly as written, never reworded here. */
+export function currentOffers(specials: { title: string; offer: string; code: string | null; county: string | null; ends_on: string | null }[]) {
+  return specials.slice(0, 3).map((s) => ({
+    title: clean(s.title, 120),
+    offer: clean(s.offer, 1000),
+    code: clean(s.code, 40) || null,
+    applies_in: s.county ?? "all counties",
+    ends_on: s.ends_on,
+  }));
+}
+
 export function ourCompanyFacts(l: Partial<LetterSettings>) {
   return {
     company_name: clean(l.company_name, 120) || "Kitchen Respray",

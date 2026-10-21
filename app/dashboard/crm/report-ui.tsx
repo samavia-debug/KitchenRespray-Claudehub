@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { addDays, dublinToday } from "@/lib/crm/followups";
 import type { DrillRow, FunnelStep, MetricValue, ReportResult, TerritoryRow } from "@/lib/crm/reports";
+import { runningFor } from "@/lib/crm/specials";
+import type { Special } from "@/lib/crm/types";
 import { api } from "./api";
 import { useCrm } from "./crm-context";
 import { fmtDate, fmtDateTime, fmtMoney, personName } from "./fmt";
@@ -268,7 +270,7 @@ export function TrendBars({ points, field, label, bucket }: { points: { date: st
  * One row per county. The first columns are how things stand now (whatever the period); the last four are for the period
  * chosen above. A county's name opens the company list for that county.
  */
-export function TerritoryTable({ rows, linked = true }: { rows: TerritoryRow[]; linked?: boolean }) {
+export function TerritoryTable({ rows, linked = true, specials, today }: { rows: TerritoryRow[]; linked?: boolean; specials?: Special[]; today?: string }) {
   const total = (f: (r: TerritoryRow) => number) => rows.reduce((n, r) => n + f(r), 0);
   const wrap = { whiteSpace: "normal" as const };
   const dim = (r: TerritoryRow) => (r.companies === 0 ? { color: "var(--muted)" } : undefined);
@@ -287,6 +289,7 @@ export function TerritoryTable({ rows, linked = true }: { rows: TerritoryRow[]; 
             <th style={wrap}>Added</th>
             <th>Won</th>
             <th style={wrap}>Confirmed sales</th>
+            {specials && <th style={wrap}>Special running</th>}
           </tr>
         </thead>
         <tbody>
@@ -313,6 +316,15 @@ export function TerritoryTable({ rows, linked = true }: { rows: TerritoryRow[]; 
               <td>{r.added}</td>
               <td>{r.won}</td>
               <td>{r.wonValue ? fmtMoney(r.wonValue) : "—"}</td>
+              {specials && (
+                <td style={{ whiteSpace: "normal", minWidth: 140 }}>
+                  {(() => {
+                    // Only this county's own specials here; one for every county is shown once, above the table.
+                    const own = runningFor(specials, r.key, today ?? "").filter((x) => x.county === r.key);
+                    return own.length ? own.map((x) => <div key={x.id}>{x.title}{x.ends_on ? <span style={{ color: "var(--muted)", fontSize: "0.78rem" }}> (to {x.ends_on.slice(8)}/{x.ends_on.slice(5, 7)})</span> : null}</div>) : <span style={{ color: "var(--muted)" }}>—</span>;
+                  })()}
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -328,6 +340,7 @@ export function TerritoryTable({ rows, linked = true }: { rows: TerritoryRow[]; 
             <td>{total((r) => r.added)}</td>
             <td>{total((r) => r.won)}</td>
             <td>{total((r) => r.wonValue) ? fmtMoney(total((r) => r.wonValue)) : "—"}</td>
+            {specials && <td></td>}
           </tr>
         </tfoot>
       </table>

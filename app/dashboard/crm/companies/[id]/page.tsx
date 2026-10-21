@@ -16,6 +16,7 @@ import ActivitySection from "../../activity-section";
 import AiAssistant from "../../ai-assistant";
 import OpportunitiesSection from "../../opportunities-section";
 import TasksSection from "../../tasks-section";
+import { CompanySpecials } from "../../specials-section";
 
 function Detail({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -178,6 +179,8 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
         {stageError && !dialog && <p className="error-text">{stageError}</p>}
         {note && <p style={{ margin: "0.6rem 0 0", fontSize: "0.85rem" }}>{note}</p>}
       </div>
+
+      <CompanySpecials county={company.county} />
 
       <TasksSection companyId={params.id} contacts={contacts.map((c) => ({ id: c.id, full_name: c.full_name }))} onChanged={changed} refreshKey={refresh} />
       <ActivitySection companyId={params.id} contacts={contacts.map((c) => ({ id: c.id, full_name: c.full_name }))} onChanged={changed} refreshKey={refresh} />

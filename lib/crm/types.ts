@@ -243,3 +243,23 @@ export type Opportunity = OpportunityFields & {
   created_at: string;
   updated_at: string;
 };
+
+// ---------- specials: offers that differ by county and by time ----------
+
+export type SpecialFields = {
+  title: string;
+  /** The exact wording to use when telling someone about it. */
+  offer: string;
+  code: string | null;
+  /** One of the twelve Leinster counties, or null when the special applies in every county. */
+  county: string | null;
+  starts_on: string;
+  /** The last day it runs, or null when it has no end date yet. */
+  ends_on: string | null;
+  /** Switched off by hand (for example withdrawn early), whatever the dates say. */
+  active: boolean;
+};
+
+export type Special = SpecialFields & { id: string; created_at: string; updated_at: string };
+
+export type SpecialStatus = "upcoming" | "running" | "ended" | "off";

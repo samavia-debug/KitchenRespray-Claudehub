@@ -529,6 +529,15 @@ export function buildReport(d: ReportData, range: ResolvedRange, filters: Report
   };
 }
 
+/**
+ * A function that counts a period for one county (or, with null, every county) by the same rules as the reports, so the
+ * figures for a special and the figures on the Reports page can never disagree. The index is built once and reused.
+ */
+export function periodCounter(d: ReportData, today: string): (range: ResolvedRange, county: string | null) => CountRow {
+  const ix = buildIndex(d);
+  return (range, county) => countRow(county ?? "all", county ?? "All counties", collect(d, ix, range, today, { category: null, staff: null, county }));
+}
+
 function kindIs(ix: Index, c: RCompany, kind: StageKind): boolean {
   return !!c.stage_id && ix.stage.get(c.stage_id)?.kind === kind;
 }

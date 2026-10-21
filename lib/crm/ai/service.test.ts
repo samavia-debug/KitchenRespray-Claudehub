@@ -202,6 +202,55 @@ describe("draftMessage", () => {
   });
 });
 
+describe("draftMessage and the current offers", () => {
+  const input = { company_id: "c1", contact_id: "k1", channel: "WhatsApp" as const, kind: "introduction" as const, instructions: "" };
+  const day = (n: number) => new Date(Date.now() + n * 86_400_000).toISOString().slice(0, 10);
+  const special = (id: string, over: Record<string, unknown>) => ({ id, title: `Special ${id}`, offer: "10% off a kitchen respray", code: null, county: "Wicklow", starts_on: day(-5), ends_on: day(10), active: true, created_at: nowIso(), updated_at: nowIso(), ...over });
+  const draft = (body: string) => JSON.stringify({ subject: "", body, missing: [] });
+
+  it("gives the writer the offers running where the company is, exactly as written, and no others", async () => {
+    tables.crm_specials = [
+      special("a", { title: "Wicklow spring offer", offer: "15% off kitchen doors until the end of the month", code: "WICK15" }),
+      special("all", { title: "Leinster trade price", county: null, offer: "Trade prices for joiners" }),
+      special("other", { title: "Carlow only", county: "Carlow", offer: "20% off Carlow" }),
+      special("ended", { title: "Old Wicklow offer", ends_on: day(-1), offer: "5% off" }),
+      special("later", { title: "Next month in Wicklow", starts_on: day(3), offer: "Coming soon" }),
+      special("off", { title: "Withdrawn", active: false, offer: "Withdrawn offer" }),
+    ];
+    reply(draft("Hi Mick, we have 15% off kitchen doors with code WICK15."));
+    const r = await draftMessage(input, USER);
+    const { user, system } = sent();
+    expect(user).toContain("<current_offers>");
+    expect(user).toContain("15% off kitchen doors until the end of the month");
+    expect(user).toContain("WICK15");
+    expect(user).toContain("Trade prices for joiners");
+    for (const not of ["20% off Carlow", "Old Wicklow offer", "Coming soon", "Withdrawn offer"]) expect(user).not.toContain(not);
+    expect(system).toMatch(/current_offers/);
+    expect(r).toMatchObject({ missing: [] }); // 15% is one of the listed offers
+  });
+
+  it("makes no offer when nothing is running", async () => {
+    tables.crm_specials = [special("ended", { ends_on: day(-1) })];
+    reply(draft("Hi Mick, quick hello."));
+    await draftMessage(input, USER);
+    expect(sent().user).toContain("(none running)");
+  });
+
+  it("works when the table has no specials at all", async () => {
+    reply(draft("Hi Mick, quick hello."));
+    expect(await draftMessage(input, USER)).toMatchObject({ body: "Hi Mick, quick hello." });
+    expect(sent().user).toContain("(none running)");
+  });
+
+  it("flags a percentage or amount the writer was never given", async () => {
+    tables.crm_specials = [special("a", { offer: "15% off kitchen doors" })];
+    reply(draft("Hi Mick, we can do 25% off, or a kitchen for €3,500."));
+    const r = await draftMessage(input, USER);
+    expect(r).toMatchObject({ missing: expect.arrayContaining([expect.stringContaining('"25%"'), expect.stringContaining("€3,500")]) });
+    expect("missing" in r && r.missing.join(" ")).toMatch(/Check it before sending/);
+  });
+});
+
 describe("researchCompany", () => {
   const html = `<html><head><title>Ace Joinery | Bray</title><meta name="description" content="Family-run joinery firm in Bray."></head>
     <body><p>We make bespoke kitchens and fitted wardrobes for homes and hotels across Wicklow.</p><p>Our team: Mick Doyle, Operations Manager.</p>

@@ -1,6 +1,6 @@
 import { dublinToday } from "./followups";
 import { cleanWebsite, searchTerm } from "./normalize";
-import { COUNTY_CHOICES, normalizeCounty, NO_COUNTY } from "./territories";
+import { COUNTY_CHOICES, LEINSTER_COUNTIES, normalizeCounty, NO_COUNTY, OUTSIDE_LEINSTER } from "./territories";
 import {
   ACTIVITY_TYPES,
   CONTACT_METHODS,
@@ -22,6 +22,7 @@ import {
   type ContactMethod,
   type Priority,
   type SortField,
+  type SpecialFields,
 } from "./types";
 
 type Raw = Record<string, unknown>;
@@ -336,6 +337,56 @@ export function cleanActivityInput(input: unknown): Cleaned<CleanActivity> {
       next_follow_up: futureDateOrNull(raw, "next_follow_up", "Follow-up date"),
     });
     return { value: { ...value, company_id, type } };
+  } catch (err: any) {
+    return { error: err.message };
+  }
+}
+
+// ---------- specials ----------
+
+const SPECIAL_COUNTY_HELP = "Choose one of the Leinster counties, or all counties";
+
+/** The county a special applies to: one of the twelve, or null for every county. "Outside Leinster" is not a territory. */
+function specialCounty(raw: Raw): string | null | undefined {
+  if (!("county" in raw)) return undefined;
+  const v = raw.county;
+  if (v === null || v === undefined) return null;
+  if (typeof v !== "string") throw new Error(SPECIAL_COUNTY_HELP);
+  const t = v.trim();
+  if (t === "" || /^all( counties| leinster)?$/i.test(t)) return null;
+  const county = normalizeCounty(t);
+  if (!county || county === OUTSIDE_LEINSTER || !(LEINSTER_COUNTIES as readonly string[]).includes(county)) throw new Error(SPECIAL_COUNTY_HELP);
+  return county;
+}
+
+export function cleanSpecialInput(input: unknown, partial = false): Cleaned<Partial<SpecialFields>> {
+  const raw = asObject(input);
+  if (!raw) return { error: "Nothing was sent" };
+  try {
+    const title = text(raw, "title", "Title", 120);
+    if ((title === undefined && !partial) || title === null) throw new Error("Give the special a title");
+    const offer = text(raw, "offer", "Offer wording", 1000);
+    if ((offer === undefined && !partial) || offer === null) throw new Error("Write the offer exactly as it should be told to people");
+    const starts_on = dateOrNull(raw, "starts_on", "Start date");
+    if ((starts_on === undefined && !partial) || starts_on === null) throw new Error("Choose the day it starts");
+    const ends_on = dateOrNull(raw, "ends_on", "End date");
+    if (starts_on && ends_on && ends_on < starts_on) throw new Error("The end date cannot be before the start date");
+    if ("active" in raw && typeof raw.active !== "boolean") throw new Error("Active must be on or off");
+
+    const value = defined({
+      title,
+      offer,
+      code: text(raw, "code", "Code", 40),
+      county: specialCounty(raw),
+      starts_on,
+      ends_on,
+      active: "active" in raw ? (raw.active as boolean) : undefined,
+    });
+    if (!partial) {
+      if (!("county" in value)) value.county = null;
+      if (!("active" in value)) value.active = true;
+    }
+    return { value };
   } catch (err: any) {
     return { error: err.message };
   }
