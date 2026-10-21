@@ -341,6 +341,27 @@ export function cleanActivityInput(input: unknown): Cleaned<CleanActivity> {
   }
 }
 
+export type BulkActivity = { ids: string[]; activity: Omit<CleanActivity, "company_id">; confirmed: boolean };
+
+/**
+ * One activity to record against many companies (for example the WhatsApp message sent to a list). The activity is
+ * checked by the same rules as a single one; the contact is left out because it can only belong to one company.
+ */
+export function cleanBulkActivity(input: unknown): Cleaned<BulkActivity> {
+  const raw = asObject(input);
+  if (!raw) return { error: "Nothing was sent" };
+  const ids = Array.isArray(raw.ids) ? raw.ids : [];
+  if (ids.length === 0) return { error: "Select at least one company" };
+  if (ids.length > MAX_BULK) return { error: `Select no more than ${MAX_BULK} companies at a time` };
+  if (!ids.every(isUuid)) return { error: "One of the selected companies is not valid" };
+
+  const { contact_id: _contact, ...rest } = raw;
+  const cleaned = cleanActivityInput({ ...rest, company_id: "00000000-0000-4000-8000-000000000000" });
+  if ("error" in cleaned) return { error: cleaned.error };
+  const { company_id: _company, ...activity } = cleaned.value;
+  return { value: { ids: Array.from(new Set(ids as string[])), activity, confirmed: raw.confirmed === true } };
+}
+
 export function cleanTaskInput(input: unknown, partial = false): Cleaned<Partial<TaskFields>> {
   const raw = asObject(input);
   if (!raw) return { error: "Nothing was sent" };

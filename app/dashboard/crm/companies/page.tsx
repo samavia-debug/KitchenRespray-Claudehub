@@ -6,8 +6,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { CompanyRow } from "@/lib/crm/service";
 import { COUNTY_CHOICES, NO_COUNTY } from "@/lib/crm/territories";
 import { PRIORITIES, type SortField } from "@/lib/crm/types";
+import { MAX_BULK } from "@/lib/crm/validate";
 import { api } from "../api";
 import { downloadExport } from "../download";
+import BulkActivityDialog from "../bulk-activity-dialog";
 import { PriorityMark, StageBadge } from "../badges";
 import { useCrm } from "../crm-context";
 import { FOLLOW_UP_COLOR, fmtDate, fmtMoney, followUpState, personName } from "../fmt";
@@ -70,6 +72,8 @@ export default function CompaniesPage() {
   const [bulkCategory, setBulkCategory] = useState("");
   const [bulkCounty, setBulkCounty] = useState("");
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+  const [showLog, setShowLog] = useState(false);
+  const [selectingAll, setSelectingAll] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportNote, setExportNote] = useState<string | null>(null);
@@ -165,6 +169,26 @@ export default function CompaniesPage() {
   }
 
   const allOnPage = rows.length > 0 && rows.every((r) => selected.has(r.id));
+
+  /** Selects every company the current search and filters show, not just this page (up to the most one change can cover). */
+  async function selectAllMatching() {
+    setSelectingAll(true);
+    setBulkMessage(null);
+    const ids: string[] = [];
+    for (let page = 1; ids.length < total && page <= Math.ceil(MAX_BULK / 100); page++) {
+      const params = new URLSearchParams({ pageSize: "100" });
+      for (const [k, v] of Object.entries(filters)) if (v !== "" && v !== null && k !== "page" && k !== "pageSize") params.set(k, String(v));
+      params.set("page", String(page));
+      const res = await api(`/api/crm/companies?${params}`);
+      if (!res.ok) {
+        setSelectingAll(false);
+        return setBulkMessage(res.body.error || "Could not select them all");
+      }
+      ids.push(...(res.body.companies as CompanyRow[]).map((c) => c.id));
+    }
+    setSelectingAll(false);
+    setSelected(new Set(ids.slice(0, MAX_BULK)));
+  }
   const isOverseer = meta?.role === "Admin" || meta?.role === "Manager";
 
   /** Exports what is selected, or else everything the current search and filters show (not just this page). */
@@ -352,12 +376,43 @@ export default function CompaniesPage() {
             <button className="btn btn-secondary" style={{ padding: "0.35rem 0.7rem", fontSize: "0.8rem" }} disabled={!bulkCounty || bulkBusy} onClick={() => applyBulk("county")}>
               Set county
             </button>
+            <button className="btn" style={{ padding: "0.35rem 0.7rem", fontSize: "0.8rem" }} disabled={bulkBusy} onClick={() => setShowLog(true)} title="Record a WhatsApp, call or email that has already happened against all of these">
+              Log activity...
+            </button>
             <button className="btn btn-secondary" style={{ padding: "0.35rem 0.7rem", fontSize: "0.8rem" }} onClick={() => setSelected(new Set())}>
               Clear selection
             </button>
           </div>
         )}
+        {allOnPage && total > rows.length && selected.size < Math.min(total, MAX_BULK) && (
+          <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>
+            All {rows.length} on this page are selected.{" "}
+            {total <= MAX_BULK ? (
+              <button type="button" className="btn btn-secondary" style={{ padding: "0.2rem 0.6rem", fontSize: "0.8rem" }} disabled={selectingAll} onClick={selectAllMatching}>
+                {selectingAll ? "Selecting..." : `Select all ${total} that match`}
+              </button>
+            ) : (
+              <>
+                <button type="button" className="btn btn-secondary" style={{ padding: "0.2rem 0.6rem", fontSize: "0.8rem" }} disabled={selectingAll} onClick={selectAllMatching}>
+                  {selectingAll ? "Selecting..." : `Select the first ${MAX_BULK}`}
+                </button>{" "}
+                <span style={{ color: "var(--muted)" }}>One change covers up to {MAX_BULK} companies; narrow the filters to act on all {total}.</span>
+              </>
+            )}
+          </p>
+        )}
         {bulkMessage && <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem" }}>{bulkMessage}</p>}
+        {showLog && (
+          <BulkActivityDialog
+            ids={Array.from(selected)}
+            onClose={() => setShowLog(false)}
+            onDone={(message) => {
+              setShowLog(false);
+              setBulkMessage(message);
+              load();
+            }}
+          />
+        )}
         {error && <p className="error-text">{error}</p>}
 
         <div className="table-wrap" style={{ opacity: loading ? 0.6 : 1 }}>

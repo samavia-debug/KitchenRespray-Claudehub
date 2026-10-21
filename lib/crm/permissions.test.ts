@@ -51,6 +51,7 @@ const CASES: Case[] = [
   { route: "pipeline", method: "GET", need: "access" },
   { route: "activities", method: "GET", need: "access", url: `?company_id=${ID}` },
   { route: "activities", method: "POST", need: "access", body: {} },
+  { route: "activities/bulk", method: "POST", need: "access", body: {} },
   { route: "activities/[id]", method: "DELETE", need: "overseer", params: { id: ID } },
   { route: "tasks", method: "GET", need: "access" },
   { route: "tasks", method: "POST", need: "access", body: {} },

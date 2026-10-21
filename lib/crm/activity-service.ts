@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/service";
-import { dublinToday, dueRange } from "./followups";
+import { addDays, dublinToday, dueRange } from "./followups";
+import { dublinDayStart } from "./report-range";
 import { fail, logEvent, nextStamp, STAFF_ROLES, type Db } from "./service";
 import {
   CONTACT_ACTIVITY_TYPES,
@@ -12,7 +13,7 @@ import {
   type TaskFields,
 } from "./types";
 import { FOLLOW_UP_VIEWS } from "./types";
-import type { CleanActivity, OpportunityStatusChange, TaskCompletion, TaskQuery } from "./validate";
+import type { BulkActivity, CleanActivity, OpportunityStatusChange, TaskCompletion, TaskQuery } from "./validate";
 
 const TASK_SELECT = "*, company:crm_companies!inner(name, archived_at, last_activity_type, last_activity_at), contact:crm_contacts(full_name), assignee:profiles!assigned_to(email)";
 
@@ -142,6 +143,109 @@ export async function logActivity(input: CleanActivity, userId: string): Promise
 
   await logEvent(db, userId, "activity_logged", "activity", data.id, { type: input.type, follow_up_created: !!taskId });
   return { id: data.id, taskId };
+}
+
+export type BulkLogResult = {
+  /** Companies that now have the activity. */
+  logged: number;
+  /** Left out because they already had that kind of activity on that day, so a second click cannot log it twice. */
+  alreadyLogged: number;
+  /** Left out because the company no longer exists or has been archived. */
+  notFound: number;
+  /** Follow-ups created (one per company logged, when a follow-up date was given). */
+  followUps: number;
+};
+
+/**
+ * Records the same activity against many companies, such as the WhatsApp message that went out to a list. The rules are
+ * those of logActivity (last contacted only moves forward, a follow-up date creates a follow-up), but the work is done
+ * in a handful of queries however many companies there are. A company that already has this kind of activity on the
+ * same day is skipped, so pressing the button twice does not record the message twice.
+ */
+export async function bulkLogActivity(input: BulkActivity, userId: string): Promise<BulkLogResult | { error: string }> {
+  if (!input.confirmed) return { error: "The change needs to be confirmed" };
+  const db = createServiceClient();
+  const doneBy = input.activity.user_id ?? userId;
+  if (doneBy !== userId && !(await isTeamMember(db, doneBy))) return { error: "That person cannot be recorded against an activity" };
+
+  const { data: found, error: findError } = await db.from("crm_companies").select("id, last_activity_at, last_contacted_at, next_follow_up").in("id", input.ids).is("archived_at", null);
+  if (findError) fail(findError, "Could not check the companies");
+  const companies = (found ?? []) as { id: string; last_activity_at: string | null; last_contacted_at: string | null; next_follow_up: string | null }[];
+
+  const occurred = input.activity.occurred_at ?? new Date().toISOString();
+  const day = dublinToday(new Date(occurred));
+  const { data: same, error: sameError } = await db
+    .from("crm_activities")
+    .select("company_id")
+    .eq("type", input.activity.type)
+    .in("company_id", companies.map((c) => c.id))
+    .gte("occurred_at", dublinDayStart(day))
+    .lt("occurred_at", dublinDayStart(addDays(day, 1)));
+  if (sameError) fail(sameError, "Could not check for activity already recorded");
+  const already = new Set((same ?? []).map((r: any) => r.company_id as string));
+  const todo = companies.filter((c) => !already.has(c.id));
+  const result: BulkLogResult = { logged: 0, alreadyLogged: companies.length - todo.length, notFound: input.ids.length - companies.length, followUps: 0 };
+  if (todo.length === 0) return result;
+
+  const { data: made, error } = await db
+    .from("crm_activities")
+    .insert(
+      todo.map((c) => ({
+        company_id: c.id,
+        contact_id: null,
+        type: input.activity.type,
+        occurred_at: occurred,
+        user_id: doneBy,
+        outcome: input.activity.outcome ?? null,
+        notes: input.activity.notes ?? null,
+        next_action: input.activity.next_action ?? null,
+        next_follow_up: input.activity.next_follow_up ?? null,
+        created_by: userId,
+      }))
+    )
+    .select("id, company_id");
+  if (error) fail(error, "Could not save the activity");
+  result.logged = todo.length;
+
+  // Move the "last" markers forward, never back. The new value is the same for every company, so each marker is one update.
+  const ids = (list: { id: string }[]) => list.map((c) => c.id);
+  const newerActivity = todo.filter((c) => isLater(occurred, c.last_activity_at, true));
+  if (newerActivity.length) await db.from("crm_companies").update({ last_activity_type: input.activity.type, last_activity_at: occurred }).in("id", ids(newerActivity));
+  if (CONTACT_ACTIVITY_TYPES.includes(input.activity.type)) {
+    const newerContact = todo.filter((c) => isLater(occurred, c.last_contacted_at));
+    if (newerContact.length) await db.from("crm_companies").update({ last_contacted_at: occurred }).in("id", ids(newerContact));
+  }
+
+  const due = input.activity.next_follow_up;
+  if (due) {
+    const activityOf = new Map((made ?? []).map((a: any) => [a.company_id as string, a.id as string]));
+    const now = new Date().toISOString();
+    const { data: tasks, error: taskError } = await db
+      .from("crm_tasks")
+      .insert(
+        todo.map((c) => ({
+          company_id: c.id,
+          contact_id: null,
+          title: input.activity.next_action ?? "Follow up",
+          due_date: due,
+          assigned_to: doneBy,
+          status: "open",
+          source_activity_id: activityOf.get(c.id) ?? null,
+          created_by: userId,
+          updated_by: userId,
+          updated_at: now,
+        }))
+      )
+      .select("id");
+    if (taskError) fail(taskError, "The activity was saved but its follow-ups could not be created");
+    result.followUps = tasks?.length ?? todo.length;
+    // A company's next follow-up is its earliest open one, so only a company with none, or a later one, changes.
+    const earlier = todo.filter((c) => !c.next_follow_up || due < c.next_follow_up);
+    if (earlier.length) await db.from("crm_companies").update({ next_follow_up: due }).in("id", ids(earlier));
+  }
+
+  await logEvent(db, userId, "bulk_activity", "activity", null, { type: input.activity.type, count: result.logged, follow_ups: result.followUps });
+  return result;
 }
 
 export async function listActivities(companyId: string, limit = 100): Promise<Activity[]> {

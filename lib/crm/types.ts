@@ -118,8 +118,10 @@ export type CompanyQuery = {
 export const ACTIVITY_TYPES = [
   "Initial research",
   "Telephone call",
+  "WhatsApp message",
   "Email sent",
   "Promotional material sent",
+  "WhatsApp follow-up",
   "Follow-up email",
   "Follow-up call",
   "Meeting",
@@ -136,8 +138,10 @@ export type ActivityType = (typeof ACTIVITY_TYPES)[number];
  */
 export const CONTACT_ACTIVITY_TYPES: ActivityType[] = [
   "Telephone call",
+  "WhatsApp message",
   "Email sent",
   "Promotional material sent",
+  "WhatsApp follow-up",
   "Follow-up email",
   "Follow-up call",
   "Meeting",
