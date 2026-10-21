@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { addDays, dublinToday } from "@/lib/crm/followups";
+import { detailPatch, FIELD_LABEL, researchPatch } from "@/lib/crm/ai/apply";
 import type { NextSteps } from "@/lib/crm/ai/prompts";
 import type { ResearchResult } from "@/lib/crm/ai/service";
 import type { CompanyRow, ContactRow } from "@/lib/crm/service";
@@ -16,7 +17,6 @@ const TOOLS: { id: Tool; label: string }[] = [
   { id: "research", label: "Research this company" },
 ];
 
-const FIELD_LABEL: Record<string, string> = { category: "Category", services: "Potential services", description: "Business description", priority: "Priority", notes: "Notes" };
 const CHANNEL_NOTE = "A reminder: send business-to-business messages to business contact details only, and give an easy way to opt out.";
 const PLACEHOLDER = /\[CONFIRM:\s*([^\]]+)\]/gi;
 
@@ -284,27 +284,45 @@ function Research({ company, onUsed, onChanged }: { company: CompanyRow; onUsed:
     onUsed(res.body.remaining);
   }
 
+  const who = () => personName(meta?.assignees.find((a) => a.id === meta?.me)?.email);
+
   /**
-   * Applies one suggestion to the company, and notes on the company that it was AI-suggested and unverified. It starts
-   * from the company as it is saved right now, so applying several suggestions one after another cannot overwrite each other.
+   * Saves one or more suggestions to the company, and marks on the company that they were AI-suggested and unverified. It
+   * starts from the company as it is saved right now, so nothing saved by someone else in the meantime is overwritten.
    */
-  async function apply(key: string, s: ResearchResult["suggestions"][number]) {
-    setState((x) => ({ ...x, [key]: "Applying..." }));
+  async function applyMany(entries: { key: string; s: ResearchResult["suggestions"][number] }[]) {
+    const mark = (text: string) => setState((x) => ({ ...x, ...Object.fromEntries(entries.map((e) => [e.key, text])) }));
+    mark("Applying...");
+    const fresh = await api(`/api/crm/companies/${company.id}`);
+    if (!fresh.ok) return mark(fresh.body.error || "Could not load the company");
+    const current = fresh.body.company as CompanyRow;
+    const patch = researchPatch(current, entries.map((e) => e.s), who(), fmtDate(dublinToday()));
+    const res = await api(`/api/crm/companies/${company.id}`, { method: "PATCH", body: { ...patch, expectedUpdatedAt: current.updated_at } });
+    if (!res.ok) return mark(res.body.error || "Could not apply it");
+    mark("Applied");
+    onChanged();
+  }
+
+  const apply = (key: string, s: ResearchResult["suggestions"][number]) => applyMany([{ key, s }]);
+
+  function applyAll() {
+    if (!result) return;
+    const entries = result.suggestions.map((s, i) => ({ key: `s${i}`, s })).filter((e) => state[e.key] !== "Applied");
+    if (entries.length === 0) return;
+    if (!window.confirm(`Save ${entries.length} suggestion${entries.length === 1 ? "" : "s"} to this company's record? They are unverified, so a line in the notes will say they came from the AI.`)) return;
+    applyMany(entries);
+  }
+
+  /** Puts a phone number or email found on their website into the empty field for it, or into the notes if that field is already filled. */
+  async function addDetail(key: string, kind: "email" | "phone", value: string) {
+    setState((x) => ({ ...x, [key]: "Saving..." }));
     const fresh = await api(`/api/crm/companies/${company.id}`);
     if (!fresh.ok) return setState((x) => ({ ...x, [key]: fresh.body.error || "Could not load the company" }));
     const current = fresh.body.company as CompanyRow;
-
-    const note = `AI-assisted (${fmtDate(dublinToday())}, ${personName(meta?.assignees.find((a) => a.id === meta?.me)?.email)}): ${FIELD_LABEL[s.field]} from ${s.source}, unverified.`;
-    const join = (existing: string | null, add: string, sep: string) => (existing ? `${existing}${sep}${add}` : add);
-    const patch: Record<string, unknown> = {};
-    if (s.field === "category") patch.category_id = s.category_id;
-    else if (s.field === "priority") patch.priority = s.value;
-    else if (s.field === "services") patch.services = join(current.services, s.value, "; ");
-    else if (s.field === "description") patch.description = join(current.description, s.value, "\n");
-    patch.notes = join(s.field === "notes" ? join(current.notes, s.value, "\n") : current.notes, note, "\n");
+    const { patch, placed } = detailPatch(current, kind, value, who(), fmtDate(dublinToday()));
     const res = await api(`/api/crm/companies/${company.id}`, { method: "PATCH", body: { ...patch, expectedUpdatedAt: current.updated_at } });
-    if (!res.ok) return setState((x) => ({ ...x, [key]: res.body.error || "Could not apply it" }));
-    setState((x) => ({ ...x, [key]: "Applied" }));
+    if (!res.ok) return setState((x) => ({ ...x, [key]: res.body.error || "Could not save it" }));
+    setState((x) => ({ ...x, [key]: placed === "notes" ? "Added to the notes" : `Saved as ${placed === "email" ? "email" : placed === "mobile" ? "mobile" : "telephone"}` }));
     onChanged();
   }
 
@@ -342,6 +360,14 @@ function Research({ company, onUsed, onChanged }: { company: CompanyRow; onUsed:
           {result.summary && <p style={{ margin: "0.75rem 0", fontSize: "0.9rem" }}>{result.summary}</p>}
 
           {result.suggestions.length === 0 && <p style={{ color: "var(--muted)", fontSize: "0.88rem" }}>Nothing could be suggested that has evidence behind it.</p>}
+          {result.suggestions.filter((_, i) => state[`s${i}`] !== "Applied").length >= 2 && (
+            <div style={{ margin: "0 0 0.6rem" }}>
+              <button className="btn" style={btn} disabled={result.suggestions.some((_, i) => state[`s${i}`] === "Applying...")} onClick={applyAll}>
+                Apply all {result.suggestions.filter((_, i) => state[`s${i}`] !== "Applied").length} to this company
+              </button>
+              <span style={{ marginLeft: "0.6rem", fontSize: "0.78rem", color: "var(--muted)" }}>Adds to what is there and never replaces it. The notes will say it came from the AI and is unverified.</span>
+            </div>
+          )}
           {result.suggestions.map((s, i) => {
             const key = `s${i}`;
             return (
@@ -401,16 +427,22 @@ function Research({ company, onUsed, onChanged }: { company: CompanyRow; onUsed:
             <div style={{ marginTop: "0.75rem", fontSize: "0.85rem" }}>
               <strong>Contact details shown on their website</strong> <Unverified>Check before using</Unverified>
               <ul style={{ margin: "0.3rem 0 0", paddingLeft: "1.2rem" }}>
-                {result.details.emails.map((e) => (
-                  <li key={e.value}>
-                    {e.value} {e.onRecord ? <span style={{ color: "var(--muted)" }}>(already on record)</span> : <span style={{ color: "#8a6700" }}>(not on record)</span>}
-                  </li>
-                ))}
-                {result.details.phones.map((p) => (
-                  <li key={p.value}>
-                    {p.value} {p.onRecord ? <span style={{ color: "var(--muted)" }}>(already on record)</span> : <span style={{ color: "#8a6700" }}>(not on record)</span>}
-                  </li>
-                ))}
+                {([["email", result.details.emails], ["phone", result.details.phones]] as const).flatMap(([kind, list]) =>
+                  list.map((d) => {
+                    const key = `${kind}:${d.value}`;
+                    return (
+                      <li key={key}>
+                        {d.value} {d.onRecord ? <span style={{ color: "var(--muted)" }}>(already on record)</span> : <span style={{ color: "#8a6700" }}>(not on record)</span>}
+                        {!d.onRecord && !/^(Saved|Added)/.test(state[key] ?? "") && (
+                          <button className="btn btn-secondary" style={{ ...btn, marginLeft: "0.6rem", padding: "0.15rem 0.55rem" }} disabled={state[key] === "Saving..."} onClick={() => addDetail(key, kind, d.value)}>
+                            Add to record
+                          </button>
+                        )}
+                        {state[key] && <span style={{ marginLeft: "0.5rem", color: /^(Saved|Added)/.test(state[key]) ? "#2e7d32" : "#b3261e" }}>{state[key] === "Saving..." ? "" : state[key]}</span>}
+                      </li>
+                    );
+                  })
+                )}
                 {result.details.social.map((u) => (
                   <li key={u}>
                     <a href={u} target="_blank" rel="noreferrer">

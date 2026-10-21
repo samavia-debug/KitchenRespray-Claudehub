@@ -234,6 +234,10 @@ export function robotsAllows(robots: string, path: string): boolean {
 const NAMED: Record<string, string> = {
   amp: "&", lt: "<", gt: ">", quot: '"', apos: "'", nbsp: " ", copy: "©", reg: "®", trade: "™", euro: "€", pound: "£", ndash: "–", mdash: "—",
   hellip: "…", rsquo: "’", lsquo: "‘", rdquo: "”", ldquo: "“", bull: "•", middot: "·", eacute: "é", egrave: "è", aacute: "á", iacute: "í", oacute: "ó", uacute: "ú",
+  // Arrows and other marks that often follow a link ("Visit our shop →"), and common accented letters.
+  rarr: "→", larr: "←", uarr: "↑", darr: "↓", raquo: "»", laquo: "«", sbquo: "‚", bdquo: "„", times: "×", divide: "÷", deg: "°", plusmn: "±", frac12: "½",
+  sect: "§", para: "¶", dagger: "†", check: "✓", hearts: "♥", agrave: "à", acirc: "â", auml: "ä", ccedil: "ç", ecirc: "ê", euml: "ë", icirc: "î", iuml: "ï",
+  ntilde: "ñ", ocirc: "ô", ouml: "ö", szlig: "ß", ucirc: "û", uuml: "ü", oslash: "ø", aring: "å", aelig: "æ", iexcl: "¡", iquest: "¿", cent: "¢", yen: "¥",
 };
 
 function decodeHtml(s: string): string {

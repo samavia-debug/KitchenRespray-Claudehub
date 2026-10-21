@@ -121,6 +121,11 @@ describe("extractPage", () => {
     expect(p.social).toEqual(["https://www.facebook.com/acebuilders"]);
   });
 
+  it("reads the arrows and symbols that follow links, instead of showing the raw code", () => {
+    const text = extractPage("<p>Visit 57 Doors &rarr; &laquo;Shop&raquo; 5&deg; &times; 2 &ccedil;a</p>").text;
+    expect(text).toBe("Visit 57 Doors → «Shop» 5° × 2 ça");
+  });
+
   it("copes with an empty or broken page", () => {
     expect(extractPage("")).toEqual({ title: "", description: "", text: "", emails: [], phones: [], social: [] });
     expect(extractPage("<p>unclosed <b>tags and &bogus; &#0; text").text).toContain("unclosed tags and &bogus; text");
