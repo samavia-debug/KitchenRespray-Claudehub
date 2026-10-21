@@ -80,6 +80,11 @@ const CASES: Case[] = [
   { route: "ai/research", method: "POST", need: "access", body: {} },
   { route: "ai/settings", method: "GET", need: "admin" },
   { route: "ai/settings", method: "PUT", need: "admin", body: {} },
+  { route: "documents", method: "GET", need: "access", url: `?company_id=${ID}` },
+  { route: "documents", method: "POST", need: "access", body: {} },
+  { route: "documents/upload-url", method: "POST", need: "access", body: {} },
+  { route: "documents/[id]", method: "DELETE", need: "overseer", params: { id: ID } },
+  { route: "documents/[id]/download", method: "GET", need: "access", params: { id: ID } },
   { route: "whatsapp/queue", method: "POST", need: "access", body: { ids: [ID2] } },
   { route: "whatsapp/templates", method: "GET", need: "admin" },
   { route: "whatsapp/templates", method: "PUT", need: "admin", body: {} },
@@ -151,7 +156,7 @@ describe("the people who work in the CRM", () => {
     const refused = CASES.filter((c) => !MAY[c.need].includes("Staff")).map((c) => `${c.method} ${c.route}`);
     expect(refused.sort()).toEqual(
       [
-        "DELETE activities/[id]", "DELETE companies/[id]", "DELETE companies/[id]", "DELETE contacts/[id]", "DELETE opportunities/[id]", "DELETE specials/[id]", "PATCH specials/[id]", "POST export", "POST specials",
+        "DELETE activities/[id]", "DELETE companies/[id]", "DELETE companies/[id]", "DELETE contacts/[id]", "DELETE opportunities/[id]", "DELETE specials/[id]", "PATCH specials/[id]", "POST export", "POST specials", "DELETE documents/[id]",
         "POST import/batches/[id]/undo", "POST settings", "GET ai/settings", "PUT ai/settings", "GET whatsapp/templates", "PUT whatsapp/templates",
       ].sort()
     );

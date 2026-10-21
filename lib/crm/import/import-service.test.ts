@@ -186,6 +186,15 @@ describe("undoBatch", () => {
     expect(companies()).toHaveLength(4);
   });
 
+  it("keeps a company that has a document attached, so its file is never left behind", async () => {
+    const batchId = await imported(2);
+    const [withDocument, untouched] = companies();
+    tables.crm_documents = [{ id: "d1", company_id: withDocument.id }];
+    expect(await undoBatch(batchId, USER)).toEqual({ removed: 1, kept: 1 });
+    expect(companies().map((c) => c.id)).toEqual([withDocument.id]);
+    expect(companies().map((c) => c.id)).not.toContain(untouched.id);
+  });
+
   it("leaves other imports and hand-made companies alone, and cannot be undone twice", async () => {
     companies().push({ id: "mine", name: "Hand made", created_at: "2026-01-01T00:00:00.000Z", updated_at: "2026-01-01T00:00:00.000Z", import_batch_id: null });
     const batchId = await imported(2);

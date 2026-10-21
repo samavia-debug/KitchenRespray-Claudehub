@@ -4,6 +4,7 @@ import { companyKeys, contactKeys, matchCompanies, matchContacts, type CompanyKe
 import { CLOSING_KINDS, type Assignee, type Category, type Company, type CompanyFields, type CompanyQuery, type Contact, type ContactDuplicateMatch, type ContactFields, type DuplicateMatch, type Stage } from "./types";
 import type { BulkChange, StageChange } from "./validate";
 import { PublicError } from "./errors";
+import { removeCompanyFiles } from "./documents-service";
 
 export type Db = ReturnType<typeof createServiceClient>;
 
@@ -429,6 +430,9 @@ export async function archiveCompany(id: string, userId: string): Promise<boolea
 /** Removes a company and its contacts for good, for when a business or a person asks for their details to be erased. */
 export async function deleteCompany(id: string, userId: string): Promise<boolean> {
   const db = createServiceClient();
+  // The company's files go first: if one cannot be removed, nothing is erased.
+  const { data: exists } = await db.from("crm_companies").select("id").eq("id", id).maybeSingle();
+  if (exists) await removeCompanyFiles(id, db);
   const { data, error } = await db.from("crm_companies").delete().eq("id", id).select("id");
   if (error) fail(error, "Could not delete the company");
   if (!data || data.length === 0) return false;

@@ -270,7 +270,7 @@ describe("contacts", () => {
     await createContact({ company_id: id, full_name: "Joe Byrne", phone: "087 123 4567" }, USER, false);
     expect(await deleteContact(tables.crm_contacts[0].id, USER)).toBe(true);
     expect(tables.crm_contacts).toHaveLength(0);
-    expect(JSON.stringify(tables.crm_events)).not.toMatch(/Byrne|087/);
+    expect(JSON.stringify(tables.crm_events)).not.toMatch(/Byrne|087 123|0871234567/); // not just "087": a timestamp's milliseconds can read .087
     expect(await deleteContact("gone", USER)).toBe(false);
   });
 });

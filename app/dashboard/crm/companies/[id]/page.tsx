@@ -14,6 +14,7 @@ import { FOLLOW_UP_COLOR, fmtDate, fmtDateTime, fmtMoney, followUpState, personN
 import StageDialog from "../../stage-dialog";
 import ActivitySection from "../../activity-section";
 import AiAssistant from "../../ai-assistant";
+import DocumentsSection from "../../documents-section";
 import OpportunitiesSection from "../../opportunities-section";
 import TasksSection from "../../tasks-section";
 import { CompanySpecials } from "../../specials-section";
@@ -125,7 +126,7 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
 
   async function remove(permanent: boolean) {
     const message = permanent
-      ? `Delete ${company!.name} and all its contacts for good? This cannot be undone.`
+      ? `Delete ${company!.name} and all its contacts and documents for good? This cannot be undone.`
       : `Archive ${company!.name}? It disappears from every list. Nothing is deleted.`;
     if (!window.confirm(message)) return;
     const res = await api(`/api/crm/companies/${params.id}${permanent ? "?permanent=true" : ""}`, { method: "DELETE" });
@@ -340,6 +341,8 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
 
       <OpportunitiesSection companyId={params.id} onChanged={load} />
 
+      <DocumentsSection companyId={params.id} />
+
       {Object.keys(company.extra ?? {}).length > 0 && (
         <div className="card">
           <h2>Imported details</h2>
@@ -399,7 +402,7 @@ export default function CompanyPage({ params }: { params: { id: string } }) {
         <div className="card">
           <h2>Remove this company</h2>
           <p style={{ margin: "0 0 0.75rem", fontSize: "0.88rem", color: "var(--muted)" }}>
-            Archiving hides it from every list and keeps the record. Deleting removes it and its contacts for good, for example when someone asks for their details to be erased.
+            Archiving hides it from every list and keeps the record. Deleting removes it, its contacts and its documents for good, for example when someone asks for their details to be erased.
           </p>
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
             <button className="btn btn-secondary" onClick={() => remove(false)}>

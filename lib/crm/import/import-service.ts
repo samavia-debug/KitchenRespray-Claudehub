@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { createServiceClient } from "@/lib/supabase/service";
 import { fetchAllRows } from "@/lib/supabase/paginate";
 import { companyKeys, contactKeys, type ExistingCompany } from "../duplicates";
+import { tableMissing } from "../errors";
 import { fail, logEvent, STAFF_ROLES, type Db } from "../service";
 import type { Category } from "../types";
 import { buildRow, type BuiltRow } from "./mapping";
@@ -223,8 +224,15 @@ export async function undoBatch(batchId: string, userId: string): Promise<{ remo
 
   for (let i = 0; i < companies.length; i += IN_CHUNK) {
     const ids = companies.slice(i, i + IN_CHUNK).map((c) => c.id);
-    for (const table of ["crm_activities", "crm_tasks", "crm_opportunities", "crm_stage_history"]) {
-      const rows = await fetchAllRows<{ id: string; company_id: string }>((from, to) => db.from(table).select("id, company_id").in("company_id", ids).order("id").range(from, to));
+    // A company with a document attached has been worked on, and its file would be left behind if the company went.
+    for (const table of ["crm_activities", "crm_tasks", "crm_opportunities", "crm_stage_history", "crm_documents"]) {
+      let rows: { id: string; company_id: string }[] = [];
+      try {
+        rows = await fetchAllRows<{ id: string; company_id: string }>((from, to) => db.from(table).select("id, company_id").in("company_id", ids).order("id").range(from, to));
+      } catch (err: any) {
+        // Only the documents table may be missing (its migration not run yet); any other failure stops the undo.
+        if (!(table === "crm_documents" && tableMissing(err?.message))) throw err;
+      }
       rows.forEach((r) => touched.add(r.company_id));
     }
     const contacts = await fetchAllRows<{ id: string; company_id: string; import_batch_id: string | null }>((from, to) => db.from("crm_contacts").select("id, company_id, import_batch_id").in("company_id", ids).order("id").range(from, to));
