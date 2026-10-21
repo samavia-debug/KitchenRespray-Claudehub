@@ -4,6 +4,7 @@ import { useState } from "react";
 import { api } from "../api";
 import AiSettings from "../ai-settings";
 import { useCrm } from "../crm-context";
+import WhatsappSettings from "../whatsapp-settings";
 
 type Item = { id: string; name: string; active: boolean; sort_order: number; kind?: string };
 
@@ -100,6 +101,7 @@ export default function CrmSettingsPage() {
         reload={reload}
       />
       <AiSettings />
+      <WhatsappSettings />
     </>
   );
 }

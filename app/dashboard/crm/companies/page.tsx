@@ -10,6 +10,7 @@ import { MAX_BULK } from "@/lib/crm/validate";
 import { api } from "../api";
 import { downloadExport } from "../download";
 import BulkActivityDialog from "../bulk-activity-dialog";
+import WhatsappQueue from "../whatsapp-queue";
 import { PriorityMark, StageBadge } from "../badges";
 import { useCrm } from "../crm-context";
 import { FOLLOW_UP_COLOR, fmtDate, fmtMoney, followUpState, personName } from "../fmt";
@@ -73,6 +74,8 @@ export default function CompaniesPage() {
   const [bulkCounty, setBulkCounty] = useState("");
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
   const [showLog, setShowLog] = useState(false);
+  // The companies the WhatsApp queue was opened for; fixed when it opens, so changing the selection behind it changes nothing.
+  const [queueIds, setQueueIds] = useState<string[] | null>(null);
   const [selectingAll, setSelectingAll] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
   const [exporting, setExporting] = useState(false);
@@ -379,6 +382,9 @@ export default function CompaniesPage() {
             <button className="btn" style={{ padding: "0.35rem 0.7rem", fontSize: "0.8rem" }} disabled={bulkBusy} onClick={() => setShowLog(true)} title="Record a WhatsApp, call or email that has already happened against all of these">
               Log activity...
             </button>
+            <button className="btn" style={{ padding: "0.35rem 0.7rem", fontSize: "0.8rem" }} disabled={bulkBusy} onClick={() => setQueueIds(Array.from(selected))} title="Open WhatsApp for each of these in turn, with the message ready to send">
+              Send WhatsApp...
+            </button>
             <button className="btn btn-secondary" style={{ padding: "0.35rem 0.7rem", fontSize: "0.8rem" }} onClick={() => setSelected(new Set())}>
               Clear selection
             </button>
@@ -408,6 +414,17 @@ export default function CompaniesPage() {
             onClose={() => setShowLog(false)}
             onDone={(message) => {
               setShowLog(false);
+              setBulkMessage(message);
+              load();
+            }}
+          />
+        )}
+        {queueIds && (
+          <WhatsappQueue
+            ids={queueIds}
+            onClose={() => setQueueIds(null)}
+            onDone={(message) => {
+              setQueueIds(null);
               setBulkMessage(message);
               load();
             }}

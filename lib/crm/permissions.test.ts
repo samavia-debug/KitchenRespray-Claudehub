@@ -80,6 +80,9 @@ const CASES: Case[] = [
   { route: "ai/research", method: "POST", need: "access", body: {} },
   { route: "ai/settings", method: "GET", need: "admin" },
   { route: "ai/settings", method: "PUT", need: "admin", body: {} },
+  { route: "whatsapp/queue", method: "POST", need: "access", body: { ids: [ID2] } },
+  { route: "whatsapp/templates", method: "GET", need: "admin" },
+  { route: "whatsapp/templates", method: "PUT", need: "admin", body: {} },
 ];
 
 const ROLES = ["Viewer", "Staff", "Manager", "Admin"] as const;
@@ -149,14 +152,14 @@ describe("the people who work in the CRM", () => {
     expect(refused.sort()).toEqual(
       [
         "DELETE activities/[id]", "DELETE companies/[id]", "DELETE companies/[id]", "DELETE contacts/[id]", "DELETE opportunities/[id]", "DELETE specials/[id]", "PATCH specials/[id]", "POST export", "POST specials",
-        "POST import/batches/[id]/undo", "POST settings", "GET ai/settings", "PUT ai/settings",
+        "POST import/batches/[id]/undo", "POST settings", "GET ai/settings", "PUT ai/settings", "GET whatsapp/templates", "PUT whatsapp/templates",
       ].sort()
     );
   });
 
   it("a Manager can do everything except erase a company for good and change the CRM's settings", () => {
     const refused = CASES.filter((c) => !MAY[c.need].includes("Manager")).map((c) => `${c.method} ${c.route}`);
-    expect(refused.sort()).toEqual(["DELETE companies/[id]", "GET ai/settings", "POST settings", "PUT ai/settings"].sort());
+    expect(refused.sort()).toEqual(["DELETE companies/[id]", "GET ai/settings", "POST settings", "PUT ai/settings", "GET whatsapp/templates", "PUT whatsapp/templates"].sort());
   });
 
   it("the per-person comparison is withheld from Staff by the report route itself", async () => {

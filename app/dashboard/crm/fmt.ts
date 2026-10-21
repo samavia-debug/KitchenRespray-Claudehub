@@ -1,3 +1,5 @@
+import { whatsappNumber } from "@/lib/crm/whatsapp";
+
 const dateFmt = new Intl.DateTimeFormat("en-IE", { timeZone: "Europe/Dublin", day: "numeric", month: "short", year: "numeric" });
 const dateTimeFmt = new Intl.DateTimeFormat("en-IE", { timeZone: "Europe/Dublin", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
 const moneyFmt = new Intl.NumberFormat("en-IE", { style: "currency", currency: "EUR", maximumFractionDigits: 0 });
@@ -15,17 +17,8 @@ export { personName } from "@/lib/crm/names";
  * Landlines get no link.
  */
 export function whatsappLink(raw: string | null | undefined): string | null {
-  if (!raw) return null;
-  const text = raw.trim();
-  let digits = text.replace(/\(0\)/g, "").replace(/\D/g, "");
-  if (digits.startsWith("00")) digits = digits.slice(2);
-  else if (!text.startsWith("+")) {
-    if (!digits.startsWith("0")) return null;
-    digits = `353${digits.slice(1)}`;
-  }
-  // An Irish landline (01, 021, 044...) cannot have WhatsApp: Irish mobiles are 083 to 089, so after 353 they start with 8.
-  if (digits.startsWith("353") && !/^3538\d{8}$/.test(digits)) return null;
-  return digits.length >= 9 && digits.length <= 15 ? `https://wa.me/${digits}` : null;
+  const n = whatsappNumber(raw);
+  return n?.mobile ? `https://wa.me/${n.number}` : null;
 }
 
 /** Today in Dublin as YYYY-MM-DD, for "is this follow-up overdue". */
