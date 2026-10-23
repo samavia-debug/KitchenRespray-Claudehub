@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import Link from "next/link";
 import SignOutButton from "./sign-out-button";
 import SidebarNav from "./sidebar-nav";
 
@@ -30,7 +31,12 @@ export default async function DashboardLayout({
           <label htmlFor="nav-toggle" className="menu-btn btn btn-secondary">
             ☰ Menu
           </label>
-          <SignOutButton />
+          <div style={{ display: "flex", gap: "0.5rem", alignItems: "center" }}>
+            <Link href="/dashboard/account" className="btn btn-secondary">
+              My account
+            </Link>
+            <SignOutButton />
+          </div>
         </div>
         <main className="main-area">{children}</main>
       </div>

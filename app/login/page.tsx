@@ -1,11 +1,22 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
+// Reading the address (for the "password changed" and "link expired" notes) needs a Suspense boundary on a page that is built ahead of time.
 export default function LoginPage() {
+  return (
+    <Suspense fallback={null}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const params = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -38,6 +49,8 @@ export default function LoginPage() {
       <div className="auth-card">
         <h1>KitchenRespray Hub</h1>
         <p className="subtitle">Sign in to your team dashboard</p>
+        {params.get("reset") === "done" && <p style={{ fontSize: "0.9rem" }}>Your password has been changed. Sign in with the new one.</p>}
+        {params.get("error") === "link" && <p className="error-text">That link has expired or was already used. Ask for a new one below.</p>}
 
         <form onSubmit={handleSubmit}>
           <div className="field">
@@ -70,6 +83,10 @@ export default function LoginPage() {
             {loading ? "Signing in..." : "Sign in"}
           </button>
         </form>
+
+        <p style={{ marginTop: "1rem", fontSize: "0.85rem", textAlign: "center" }}>
+          <Link href="/forgot-password">Forgot password?</Link>
+        </p>
       </div>
     </div>
   );

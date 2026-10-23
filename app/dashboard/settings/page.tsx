@@ -3,6 +3,8 @@
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { checkPassword } from "@/lib/auth/password-policy";
+import ChangePasswordForm from "../change-password-form";
 
 type Profile = {
   id: string;
@@ -54,8 +56,10 @@ export default function SettingsPage() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [resettingId, setResettingId] = useState<string | null>(null);
 
-  const [myNewPassword, setMyNewPassword] = useState("");
-  const [changingPassword, setChangingPassword] = useState(false);
+  const [myEmail, setMyEmail] = useState<string | null>(null);
+  const [newPasswordValue, setNewPasswordValue] = useState("");
+  const [resetFor, setResetFor] = useState<string | null>(null);
+  const [resetValue, setResetValue] = useState("");
 
   useEffect(() => {
     const canvaStatus = searchParams.get("canva");
@@ -79,6 +83,7 @@ export default function SettingsPage() {
       }
 
       setMyUserId(user.id);
+      setMyEmail(user.email ?? null);
 
       const { data: myProfile } = await supabase
         .from("profiles")
@@ -192,9 +197,14 @@ export default function SettingsPage() {
     setDeletingId(null);
   }
 
-  async function handleResetPassword(id: string, email: string) {
-    if (!confirm(`Reset password for ${email}? A new temporary password will be generated.`)) {
-      return;
+  /** Sets a team member's password: the one the Admin typed, or (when `typed` is empty) a temporary one made for them. */
+  async function handleResetPassword(id: string, email: string, typed: string) {
+    if (typed) {
+      const checked = checkPassword(typed, email);
+      if ("error" in checked) {
+        setMessage(`Error: ${checked.error}`);
+        return;
+      }
     }
 
     setResettingId(id);
@@ -205,7 +215,7 @@ export default function SettingsPage() {
       const res = await fetch("/api/admin/reset-password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
+        body: JSON.stringify({ id, newPassword: typed || undefined }),
       });
 
       const data = await res.json();
@@ -213,8 +223,10 @@ export default function SettingsPage() {
       if (!res.ok) {
         setMessage(`Error: ${data.error || "Could not reset password"}`);
       } else {
-        setTempPassword(data.tempPassword);
-        setMessage(`Password reset for ${email}.`);
+        if (data.tempPassword) setTempPassword(data.tempPassword);
+        setMessage(typed ? `Password set for ${email}. Tell them the new password; they can change it from My account.` : `Password reset for ${email}.`);
+        setResetFor(null);
+        setResetValue("");
       }
     } catch (err: any) {
       setMessage(`Error: ${err.message}`);
@@ -231,6 +243,14 @@ export default function SettingsPage() {
       return;
     }
 
+    if (newPasswordValue) {
+      const checked = checkPassword(newPasswordValue, newEmail.trim());
+      if ("error" in checked) {
+        setMessage(`Error: ${checked.error}`);
+        return;
+      }
+    }
+
     setAdding(true);
     setMessage(null);
     setTempPassword(null);
@@ -239,7 +259,7 @@ export default function SettingsPage() {
       const res = await fetch("/api/admin/invite-user", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: newEmail.trim(), role: newRole }),
+        body: JSON.stringify({ email: newEmail.trim(), role: newRole, password: newPasswordValue || undefined }),
       });
 
       const data = await res.json();
@@ -251,6 +271,7 @@ export default function SettingsPage() {
         setMessage(`Team member added.`);
         setNewEmail("");
         setNewRole("Staff");
+        setNewPasswordValue("");
 
         const { data: allProfiles } = await supabase
           .from("profiles")
@@ -264,39 +285,6 @@ export default function SettingsPage() {
     }
 
     setAdding(false);
-  }
-
-  async function handleChangePassword(e: React.FormEvent) {
-    e.preventDefault();
-
-    if (!myNewPassword || myNewPassword.length < 8) {
-      setMessage("New password must be at least 8 characters.");
-      return;
-    }
-
-    setChangingPassword(true);
-    setMessage(null);
-
-    try {
-      const res = await fetch("/api/admin/change-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ newPassword: myNewPassword }),
-      });
-
-      const data = await res.json();
-
-      if (!res.ok) {
-        setMessage(`Error: ${data.error || "Could not change password"}`);
-      } else {
-        setMessage("Password changed successfully.");
-        setMyNewPassword("");
-      }
-    } catch (err: any) {
-      setMessage(`Error: ${err.message}`);
-    }
-
-    setChangingPassword(false);
   }
 
   if (loading || !authorized) {
@@ -375,20 +363,7 @@ export default function SettingsPage() {
 
       <div className="card" style={{ marginBottom: "1.5rem" }}>
         <h2>Change my password</h2>
-        <form onSubmit={handleChangePassword}>
-          <div className="field">
-            <label>New password</label>
-            <input
-              type="password"
-              value={myNewPassword}
-              onChange={(e) => setMyNewPassword(e.target.value)}
-              placeholder="At least 8 characters"
-            />
-          </div>
-          <button className="btn" type="submit" disabled={changingPassword}>
-            {changingPassword ? "Changing..." : "Change password"}
-          </button>
-        </form>
+        <ChangePasswordForm email={myEmail} />
       </div>
 
       <div className="card" style={{ marginBottom: "1.5rem" }}>
@@ -414,6 +389,17 @@ export default function SettingsPage() {
                 ))}
               </select>
             </div>
+          </div>
+          <div className="field">
+            <label>Password (optional)</label>
+            <input
+              type="text"
+              value={newPasswordValue}
+              onChange={(e) => setNewPasswordValue(e.target.value)}
+              placeholder="Leave blank to have one made for you"
+              autoComplete="off"
+            />
+            <div style={{ fontSize: "0.75rem", color: "var(--muted)", marginTop: "0.25rem" }}>At least 8 characters. They can change it themselves from My account.</div>
           </div>
           <button className="btn" type="submit" disabled={adding}>
             {adding ? "Adding..." : "Add team member"}
@@ -492,10 +478,13 @@ export default function SettingsPage() {
                 <button
                   className="btn-secondary btn"
                   style={{ fontSize: "0.8rem", padding: "0.4rem 0.7rem" }}
-                  onClick={() => handleResetPassword(p.id, p.email)}
+                  onClick={() => {
+                    setResetFor(resetFor === p.id ? null : p.id);
+                    setResetValue("");
+                  }}
                   disabled={resettingId === p.id}
                 >
-                  {resettingId === p.id ? "Resetting..." : "Reset password"}
+                  {resettingId === p.id ? "Saving..." : "Reset password"}
                 </button>
                 <button
                   className="btn-secondary btn"
@@ -506,6 +495,25 @@ export default function SettingsPage() {
                   {deletingId === p.id ? "Removing..." : "Delete"}
                 </button>
               </>
+            )}
+            {resetFor === p.id && (
+              <div style={{ flexBasis: "100%", background: "var(--accent-soft)", borderRadius: 10, padding: "0.8rem", display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                <input
+                  type="text"
+                  value={resetValue}
+                  onChange={(e) => setResetValue(e.target.value)}
+                  placeholder={`New password for ${p.email} (at least 8 characters)`}
+                  autoComplete="off"
+                  style={{ flex: "1 1 260px" }}
+                  aria-label={`New password for ${p.email}`}
+                />
+                <button className="btn" style={{ fontSize: "0.8rem", padding: "0.4rem 0.7rem" }} disabled={!resetValue || resettingId === p.id} onClick={() => handleResetPassword(p.id, p.email, resetValue)}>
+                  Set this password
+                </button>
+                <button className="btn btn-secondary" style={{ fontSize: "0.8rem", padding: "0.4rem 0.7rem" }} disabled={resettingId === p.id} onClick={() => handleResetPassword(p.id, p.email, "")}>
+                  Make a temporary one
+                </button>
+              </div>
             )}
           </div>
         ))}

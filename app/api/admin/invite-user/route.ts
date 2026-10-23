@@ -1,17 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
+import { generatePassword } from "@/lib/auth/password-generate";
+import { checkPassword } from "@/lib/auth/password-policy";
 
 const VALID_ROLES = ["Admin", "Manager", "Staff", "Viewer"];
-
-function generateTempPassword() {
-  const chars = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$";
-  let password = "";
-  for (let i = 0; i < 12; i++) {
-    password += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return password;
-}
 
 export async function POST(request: NextRequest) {
   const supabase = createClient();
@@ -34,7 +27,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: "Only Admins can add team members" }, { status: 403 });
   }
 
-  const { email, role } = await request.json();
+  const { email, role, password } = await request.json();
 
   if (!email || !role) {
     return NextResponse.json({ error: "Missing email or role" }, { status: 400 });
@@ -44,12 +37,21 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: `Invalid role. Must be one of: ${VALID_ROLES.join(", ")}` }, { status: 400 });
   }
 
-  const tempPassword = generateTempPassword();
+  // The Admin may choose the first password; otherwise one is made and shown once.
+  const typed = typeof password === "string" && password !== "";
+  let initial: string;
+  if (typed) {
+    const checked = checkPassword(password, email);
+    if ("error" in checked) return NextResponse.json({ error: checked.error }, { status: 400 });
+    initial = checked.value;
+  } else {
+    initial = generatePassword();
+  }
   const serviceClient = createServiceClient();
 
   const { data: newUser, error: createError } = await serviceClient.auth.admin.createUser({
     email,
-    password: tempPassword,
+    password: initial,
     email_confirm: true,
   });
 
@@ -70,5 +72,5 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: profileError.message }, { status: 500 });
   }
 
-  return NextResponse.json({ success: true, tempPassword });
+  return NextResponse.json(typed ? { success: true } : { success: true, tempPassword: initial });
 }

@@ -17,6 +17,12 @@ A working dashboard foundation with:
    the first login for the dashboard).
 4. Redeploy on Vercel after adding environment variables.
 
+## Passwords
+- **Anyone signed in** can change their own password from **My account** (top bar). They give the current password too, so a computer left open cannot be used to lock the owner out.
+- **Forgot password?** on the sign-in page emails a one-time link (`/auth/callback` swaps the code for a sign-in, then `/reset-password`). The link has to be opened in the same browser it was requested from. It needs Supabase's **Authentication → URL Configuration → Redirect URLs** to include `https://<the site>/auth/callback`.
+- **Admins** (Settings) can set a team member's password to one they type, or make a temporary one that is shown once, and can choose the first password when adding someone. An Admin changes their own from My account.
+- Passwords are 8 to 72 characters and refuse the obvious (one repeated character, well-known ones, the person's own email). Temporary passwords come from the system's secure random source. The rules are in `lib/auth/password-policy.ts`.
+
 ## Next steps (not built yet)
 - Claude Design request form + Canva connection
 - Company Knowledge data entry (brand voice, 7 service lines, Wrapping subcategories)
