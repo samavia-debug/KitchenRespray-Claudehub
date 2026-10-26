@@ -67,7 +67,7 @@ export function renderLetter(settings: LetterSettings, c: LetterContent): Render
   const letterhead = [settings.company_name || "", ...lines(settings.address), contact].filter(Boolean);
 
   const r = c.recipient || {};
-  const recipientLines = [r.name, r.organisation, ...lines(r.address)].filter((x): x is string => !!x && !!x.trim());
+  const recipientLines = [r.name, r.organisation, ...lines(r.address), r.phone ? `Tel: ${r.phone}` : "", r.email ? `Email: ${r.email}` : ""].filter((x): x is string => !!x && !!x.trim());
 
   const signature = settings.signatory_name
     ? ["", "", settings.signatory_name, settings.signatory_title || ""].filter((l, i) => i < 2 || !!l)

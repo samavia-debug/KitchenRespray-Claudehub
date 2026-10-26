@@ -504,6 +504,12 @@ describe("12. The rest of the dashboard is untouched", () => {
     const later = [
       // Password management (My account, forgot password, an Admin choosing a member's password).
       "app/login/page.tsx", "app/dashboard/settings/page.tsx", "app/api/admin/invite-user/route.ts", "app/api/admin/reset-password/route.ts", "app/api/admin/change-password/route.ts",
+      "app/api/account/change-password/route.ts", "app/auth/callback/route.ts", "app/dashboard/account/page.tsx", "app/dashboard/change-password-form.tsx", "app/forgot-password/page.tsx", "app/reset-password/page.tsx",
+      "lib/auth/accounts.ts", "lib/auth/auth-routes.test.ts", "lib/auth/password-generate.ts", "lib/auth/password-policy.ts", "lib/auth/password.test.ts",
+      // Letter Writer: the staff member's address and contact details on the letter, and ready-made paragraphs.
+      "app/api/letters/technicians/[userId]/route.ts", "app/dashboard/letters/page.tsx", "app/dashboard/letters/writer.tsx",
+      "lib/letters/config.ts", "lib/letters/facts.ts", "lib/letters/layout.ts", "lib/letters/service.ts", "lib/letters/validate.ts",
+      "lib/letters/staff-address.ts", "lib/letters/stock.ts", "lib/letters/stock.test.ts",
     ];
     expect(out.filter((f) => ![".gitignore", "app/dashboard/layout.tsx", "app/dashboard/sidebar-nav.tsx", "app/globals.css", "lib/letters/prompt.ts", ...later].includes(f))).toEqual([]);
   });

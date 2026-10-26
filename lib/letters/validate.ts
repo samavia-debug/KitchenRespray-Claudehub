@@ -8,7 +8,7 @@ const oneLine = (v: unknown, max: number): string => text(v, max).replace(/\s+/g
 
 export function cleanRecipient(v: unknown): Recipient {
   const r = (v && typeof v === "object" ? v : {}) as Record<string, unknown>;
-  return { name: oneLine(r.name, 120), organisation: oneLine(r.organisation, 160), address: text(r.address, 400) };
+  return { name: oneLine(r.name, 120), organisation: oneLine(r.organisation, 160), address: text(r.address, 400), phone: oneLine(r.phone, 60), email: oneLine(r.email, 160) };
 }
 
 export function cleanDetails(v: unknown): LetterDetails {

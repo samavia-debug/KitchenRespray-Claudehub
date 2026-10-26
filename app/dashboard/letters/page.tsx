@@ -55,7 +55,7 @@ export default function LettersPage() {
       <div className="page-header no-print">
         <h1>✉️ Letter Writer</h1>
         <p>
-          Write a letter for a technician from the details already in the dashboard. Eleven drafts it, you check and edit it, and nothing is sent or issued from here.
+          Write a letter for a technician from the details already in the dashboard: choose the person and the kind of letter, and it fills in their name, address and contact details and writes the letter from ready-made paragraphs. You check and edit it, and nothing is sent or issued from here.
         </p>
       </div>
 

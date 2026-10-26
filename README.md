@@ -23,6 +23,11 @@ A working dashboard foundation with:
 - **Admins** (Settings) can set a team member's password to one they type, or make a temporary one that is shown once, and can choose the first password when adding someone. An Admin changes their own from My account.
 - Passwords are 8 to 72 characters and refuse the obvious (one repeated character, well-known ones, the person's own email). Temporary passwords come from the system's secure random source. The rules are in `lib/auth/password-policy.ts`.
 
+## Letter Writer
+- **Admin only.** Choose a technician and a kind of letter; **Write the letter for me** builds the whole letter at once from ready-made paragraphs (`lib/letters/stock.ts`) and the details already on record, with no AI call. The AI service is still there as a second button.
+- **The address block fills itself in.** For a letter to the person (work assignment, warning) it is addressed to them with their home address, phone and email; for any other type, one button does the same. The home address is read live from Connecteam, from the custom field named like "Home address" (`lib/letters/staff-address.ts`); it is not copied into the Hub with the staff record, and it is never sent to the AI service. It is kept only on a letter that is saved. If Connecteam has none, the field is left for typing.
+- **Ready-made paragraphs** exist for each letter type, plus a few general ones (thank you, please contact us, quote a reference). Tokens like `{name}`, `{jobTitle}` and `{startDate}` are filled from the record; anything unknown becomes `[CONFIRM: ...]`, which stops the letter being finalised. While editing, **Add a ready-made paragraph** appends any of them.
+
 ## Next steps (not built yet)
 - Claude Design request form + Canva connection
 - Company Knowledge data entry (brand voice, 7 service lines, Wrapping subcategories)

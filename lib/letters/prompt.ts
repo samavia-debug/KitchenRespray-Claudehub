@@ -1,6 +1,6 @@
 import { LETTER_TYPE_BY_KEY, type LetterTypeKey } from "./config";
 
-export type Recipient = { name?: string; organisation?: string; address?: string };
+export type Recipient = { name?: string; organisation?: string; address?: string; phone?: string; email?: string };
 
 export type LetterDetails = {
   purpose?: string;

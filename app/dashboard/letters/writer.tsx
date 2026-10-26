@@ -5,6 +5,7 @@ import { FACT_LABEL, LETTER_TYPES, LETTER_TYPE_BY_KEY, SENSITIVE_NOTICE, STATUS_
 import { applyAdded, formatLongDate, missingFacts, type LetterFacts } from "@/lib/letters/facts";
 import { EMPTY_SETTINGS, type LetterSettings } from "@/lib/letters/layout";
 import { unresolvedPlaceholders, type LetterDetails, type Recipient } from "@/lib/letters/prompt";
+import { buildFromStock, fillStock, staffAsRecipient, stockFor, type StockContext } from "@/lib/letters/stock";
 import type { LetterRow, TechnicianListItem } from "@/lib/letters/service";
 import LetterPreview from "./letter-preview";
 
@@ -134,7 +135,8 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
       }
       setFacts(body.facts);
       const f: LetterFacts = body.facts;
-      if (config?.recipient === "technician" && !recipient.name) setRecipient((r) => ({ ...r, name: f.name }));
+      // A letter to the person themselves starts addressed to them, with their address and contact details.
+      if (config?.recipient === "technician" && !recipient.name) setRecipient(staffAsRecipient(f));
     } catch (e: any) {
       setNotice({ kind: "error", text: e.message || "Network error" });
     }
@@ -145,7 +147,14 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
     setDirty(true);
     const c = next ? LETTER_TYPE_BY_KEY[next] : null;
     // A letter to the technician themselves starts addressed to them.
-    if (c?.recipient === "technician" && facts && !recipient.name) setRecipient((r) => ({ ...r, name: facts.name }));
+    if (c?.recipient === "technician" && effective && !recipient.name) setRecipient(staffAsRecipient(effective));
+  }
+
+  /** The person's name, home address and contact details as the addressee, for any letter type. */
+  function addressToStaff() {
+    if (!effective) return;
+    setRecipient(staffAsRecipient(effective));
+    setDirty(true);
   }
 
   // ---- Derived ----
@@ -219,6 +228,31 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
       setNotice({ kind: "error", text: e.message || "Network error" });
     }
     setBusy(null);
+  }
+
+  const stockContext = (): StockContext | null =>
+    effective ? { facts: effective, company: settings.company_name || "Kitchen Respray", recipient, details } : null;
+
+  /** The whole letter from the ready-made paragraphs: instant, and only what the record and the form say. */
+  function writeFromStock() {
+    const ctx = stockContext();
+    if (!ctx || !type) return;
+    if (draft?.body && dirty && !window.confirm("Write the letter again? Your edits to the current letter will be replaced.")) return;
+    const d = buildFromStock(type, ctx);
+    setDraft({ subject: d.subject, greeting: d.greeting, body: d.body, closing: d.closing });
+    setMissing(d.missing);
+    setAiGenerated(false);
+    setDirty(true);
+    setNotice({ kind: "ok", text: "Letter written. Check it, add or change any paragraph below, then save it." });
+  }
+
+  /** Adds one ready-made paragraph to the end of the letter text. */
+  function addStock(id: string) {
+    const ctx = stockContext();
+    const paragraph = type ? stockFor(type).find((p) => p.id === id) : undefined;
+    if (!ctx || !paragraph) return;
+    const text = fillStock(paragraph.text, ctx);
+    set("body", draft?.body.trim() ? `${draft.body.trimEnd()}\n\n${text}` : text);
   }
 
   /** Saves the current letter as a draft; returns its id, or null if it could not be saved. */
@@ -405,7 +439,7 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
                 <p style={{ margin: "0 0 0.75rem", fontSize: "0.8rem", color: "var(--muted)" }}>
                   Please confirm these details. Anything you add or change here is used for this letter only; the staff record is not changed.
                 </p>
-                {[...FACT_ORDER, ...CONTACT_ORDER].map((key) => {
+                {[...FACT_ORDER, ...CONTACT_ORDER, "address" as FactKey].map((key) => {
                   const value = effective.values[key] ?? "";
                   const need = config?.requiredFacts.includes(key) && !value;
                   const source = effective.sources[key];
@@ -423,7 +457,7 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
                             setDirty(true);
                           }}
                         />
-                        {(source === "added" || need || key === "startDate" || (key === "email" || key === "phone")) && (
+                        {(source === "added" || need || key === "startDate" || key === "email" || key === "phone" || key === "address") && (
                           <div style={{ fontSize: "0.7rem", color: need ? "#b3261e" : "var(--muted)" }}>
                             {need
                               ? "Missing: add it, or the letter will carry a placeholder"
@@ -431,7 +465,9 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
                               ? "Added for this letter only"
                               : key === "startDate"
                               ? "Check this date against the contract (Connecteam stores dates month first)"
-                              : "Only used if you tick the box for it below"}
+                              : key === "address"
+                              ? "Read from Connecteam when the person is chosen. Used for the address on the letter; add it here if it is not recorded."
+                              : "Printed in the address block if you use it there; written into the letter only if you tick the box below"}
                           </div>
                         )}
                       </div>
@@ -466,6 +502,18 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
         {config && (
           <>
             <h2>3. Recipient and details</h2>
+            {effective && !locked && (
+              <p style={{ margin: "0 0 0.75rem", fontSize: "0.9rem" }}>
+                {config.recipient === "technician" ? (
+                  <>The letter is addressed to {effective.name}, with the address and contact details from the record. </>
+                ) : (
+                  <>Is the letter for {effective.name} themselves? </>
+                )}
+                <button type="button" className="btn btn-secondary" style={{ marginLeft: "0.25rem" }} onClick={addressToStaff}>
+                  Fill in {effective.name}&apos;s address and contact details
+                </button>
+              </p>
+            )}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(240px, 1fr))", gap: "0.75rem" }}>
               <div className="field" style={{ margin: 0 }}>
                 <label>
@@ -481,6 +529,14 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
               <div className="field" style={{ margin: 0 }}>
                 <label>Recipient address (optional)</label>
                 <textarea rows={3} value={recipient.address ?? ""} disabled={locked} onChange={(e) => { setRecipient({ ...recipient, address: e.target.value }); setDirty(true); }} />
+              </div>
+              <div className="field" style={{ margin: 0 }}>
+                <label>Recipient phone (optional)</label>
+                <input value={recipient.phone ?? ""} disabled={locked} onChange={(e) => { setRecipient({ ...recipient, phone: e.target.value }); setDirty(true); }} />
+              </div>
+              <div className="field" style={{ margin: 0 }}>
+                <label>Recipient email (optional)</label>
+                <input value={recipient.email ?? ""} disabled={locked} onChange={(e) => { setRecipient({ ...recipient, email: e.target.value }); setDirty(true); }} />
               </div>
               <div className="field" style={{ margin: 0 }}>
                 <label>Letter date</label>
@@ -531,9 +587,20 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
             )}
 
             {!locked && (
-              <button className="btn" onClick={generate} disabled={!readyToGenerate}>
-                {busy === "generate" ? "Writing..." : draft ? "Regenerate letter" : "Generate letter"}
-              </button>
+              <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
+                <button className="btn" onClick={writeFromStock} disabled={!effective || !type}>
+                  Write the letter for me
+                </button>
+                <button className="btn btn-secondary" onClick={generate} disabled={!readyToGenerate}>
+                  {busy === "generate" ? "Writing..." : draft?.body && aiGenerated ? "Rewrite with the AI service" : "Write it with the AI service instead"}
+                </button>
+              </div>
+            )}
+            {!locked && (
+              <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
+                &ldquo;Write the letter for me&rdquo; builds it at once from ready-made paragraphs and the details above, and marks anything it does not know. The AI service writes
+                in its own words from the same details and takes a little longer.
+              </p>
             )}
             {!techId && <span style={{ marginLeft: "0.75rem", color: "var(--muted)", fontSize: "0.85rem" }}>Choose a technician first.</span>}
             {locked && <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.85rem" }}>This letter is {STATUS_LABEL[status].toLowerCase()}. Reopen it to change the details.</p>}
@@ -581,6 +648,25 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
               <label>Letter text</label>
               <textarea rows={14} value={draft.body} readOnly={locked} onChange={(e) => set("body", e.target.value)} />
             </div>
+            {!locked && type && (
+              <div className="field">
+                <label>Add a ready-made paragraph</label>
+                <select
+                  value=""
+                  onChange={(e) => {
+                    if (e.target.value) addStock(e.target.value);
+                  }}
+                  aria-label="Add a ready-made paragraph"
+                >
+                  <option value="">Choose a paragraph to add at the end...</option>
+                  {stockFor(type).map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="field">
               <label>Closing</label>
               <input value={draft.closing} readOnly={locked} onChange={(e) => set("closing", e.target.value)} />

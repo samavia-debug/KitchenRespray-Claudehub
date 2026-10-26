@@ -10,7 +10,7 @@ export async function GET(_request: Request, { params }: { params: { userId: str
   if (!Number.isSafeInteger(userId)) return NextResponse.json({ error: "Invalid technician" }, { status: 400 });
 
   try {
-    const facts = await getTechnicianFacts(userId);
+    const facts = await getTechnicianFacts(userId, true);
     if (!facts) return NextResponse.json({ error: "Technician not found" }, { status: 404 });
     return NextResponse.json({ facts });
   } catch (err: any) {

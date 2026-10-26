@@ -54,7 +54,8 @@ export function factsFromStaff(name: string, details: StaffDetails): LetterFacts
   const values: LetterFacts["values"] = {};
   const sources: LetterFacts["sources"] = {};
   for (const key of FACT_KEYS) {
-    const raw = details[key]?.trim();
+    // The staff record has no home address (it is read separately), so that key is simply absent here.
+    const raw = (details as Partial<Record<FactKey, string>>)[key]?.trim();
     if (!raw) continue;
     // A start date is shown written out so a day/month mix-up is easy to spot.
     const iso = key === "startDate" ? startDateToIso(raw) : null;

@@ -8,7 +8,7 @@ export type LetterStatus = (typeof LETTER_STATUSES)[number];
 
 export const STATUS_LABEL: Record<LetterStatus, string> = { draft: "Draft", finalised: "Finalised", approved: "Approved" };
 
-export type FactKey = "jobTitle" | "role" | "department" | "team" | "branch" | "employmentType" | "startDate" | "employeeId" | "email" | "phone";
+export type FactKey = "jobTitle" | "role" | "department" | "team" | "branch" | "employmentType" | "startDate" | "employeeId" | "email" | "phone" | "address";
 
 export const FACT_LABEL: Record<FactKey, string> = {
   jobTitle: "Job title",
@@ -21,6 +21,7 @@ export const FACT_LABEL: Record<FactKey, string> = {
   employeeId: "Employee ID",
   email: "Work email",
   phone: "Phone",
+  address: "Home address",
 };
 
 export const LETTER_TYPE_KEYS = [

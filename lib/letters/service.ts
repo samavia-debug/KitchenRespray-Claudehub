@@ -4,6 +4,7 @@ import { CONNECTEAM_SOURCE, parseStaffContent } from "@/lib/connecteam/mapping";
 import { dublinDateKey } from "@/lib/connecteam/time-clock-summary";
 import { FACT_LABEL, LETTER_TYPE_BY_KEY, type FactKey, type LetterStatus, type LetterTypeKey } from "./config";
 import { cleanStaffName } from "./names";
+import { fetchStaffAddress } from "./staff-address";
 import { applyAdded, factsForModel, factsFromStaff, formatLongDate, missingFacts, type LetterFacts } from "./facts";
 import { EMPTY_SETTINGS, type LetterSettings } from "./layout";
 import { buildSystemPrompt, buildUserMessage, parseDraft, type Draft, type LetterDetails, type Recipient } from "./prompt";
@@ -45,12 +46,15 @@ export async function listTechnicians(): Promise<TechnicianListItem[]> {
     .sort((a, b) => Number(a.former) - Number(b.former) || a.name.localeCompare(b.name, "en", { sensitivity: "base" }));
 }
 
-export async function getTechnicianFacts(userId: number): Promise<LetterFacts | null> {
+/** `withAddress` also reads the person's home address from Connecteam, for the page; writing a letter does not need it. */
+export async function getTechnicianFacts(userId: number, withAddress = false): Promise<LetterFacts | null> {
   const entry = (await staffEntries()).find((e) => Number(e.external_id) === userId);
   if (!entry) return null;
   const details = parseStaffContent((entry.content as string) ?? "");
   const source = entry.title as string;
-  const facts = factsFromStaff(cleanStaffName(source).name, { ...details, former: details.former || entry.status === "archived" });
+  const base = factsFromStaff(cleanStaffName(source).name, { ...details, former: details.former || entry.status === "archived" });
+  const address = withAddress ? await fetchStaffAddress(userId) : null;
+  const facts = address ? { ...base, values: { ...base.values, address }, sources: { ...base.sources, address: "connecteam" as const } } : base;
   return facts.name === source ? facts : { ...facts, sourceName: source };
 }
 
@@ -214,7 +218,8 @@ export type GenerateRequest = {
 export type GenerateResult = { ok: true; draft: Draft; facts: LetterFacts } | { ok: false; error: string; status: number };
 
 export async function generateLetter(req: GenerateRequest, userId: string): Promise<GenerateResult> {
-  const base = await getTechnicianFacts(req.technicianUserId);
+  // The address is read so the facts sent back to the page stay complete; it is not one of the facts sent to the model.
+  const base = await getTechnicianFacts(req.technicianUserId, true);
   if (!base) return { ok: false, error: "Technician not found", status: 404 };
 
   const config = LETTER_TYPE_BY_KEY[req.letterType];
