@@ -1,4 +1,5 @@
 import type { RenderedLetter } from "./layout";
+import { LETTERHEAD, mmToEmu, mmToTwips } from "./letterhead";
 import { buildZip } from "./zip";
 
 const esc = (s: string) =>
@@ -28,8 +29,37 @@ function paragraph(runs: Run[], opts: { after?: number; align?: "left" | "center
   return `<w:p>${ppr}${rs}</w:p>`;
 }
 
-/** The letter as a Word document: the same content as the preview, as plain editable paragraphs. */
-export function buildDocx(l: RenderedLetter, now: Date = new Date()): Buffer {
+/**
+ * The letterhead artwork as a full-page picture in the page header, behind the text, so it is on every page and
+ * the letter's own text stays editable on top of it.
+ */
+function artworkHeader(): string {
+  const cx = mmToEmu(LETTERHEAD.pageWidthMm);
+  const cy = mmToEmu(LETTERHEAD.pageHeightMm);
+  return (
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<w:hdr xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"' +
+    ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"' +
+    ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:drawing>' +
+    '<wp:anchor distT="0" distB="0" distL="0" distR="0" simplePos="0" relativeHeight="0" behindDoc="1" locked="0" layoutInCell="1" allowOverlap="1">' +
+    '<wp:simplePos x="0" y="0"/>' +
+    '<wp:positionH relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionH>' +
+    '<wp:positionV relativeFrom="page"><wp:posOffset>0</wp:posOffset></wp:positionV>' +
+    `<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="0" t="0" r="0" b="0"/><wp:wrapNone/>` +
+    '<wp:docPr id="1" name="Letterhead" descr="Company letterhead"/><wp:cNvGraphicFramePr/>' +
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>' +
+    '<pic:nvPicPr><pic:cNvPr id="0" name="letterhead.png"/><pic:cNvPicPr/></pic:nvPicPr>' +
+    '<pic:blipFill><a:blip r:embed="rIdImage"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
+    "</pic:pic></a:graphicData></a:graphic></wp:anchor></w:drawing></w:r></w:p></w:hdr>"
+  );
+}
+
+/**
+ * The letter as a Word document: the same content as the preview, as plain editable paragraphs. With `artwork`
+ * (the letterhead picture) it is placed behind every page and the margins keep the text clear of its header and footer.
+ */
+export function buildDocx(l: RenderedLetter, now: Date = new Date(), artwork?: Uint8Array): Buffer {
   const body: string[] = [];
 
   if (l.banner) body.push(paragraph([{ text: l.banner, bold: true, color: "B3261E", size: 20 }], { after: 240 }));
@@ -54,12 +84,15 @@ export function buildDocx(l: RenderedLetter, now: Date = new Date()): Buffer {
   l.signature.forEach((line, i) => body.push(paragraph([{ text: line, bold: i === 2 }], { after: 0 })));
   if (l.footer) body.push(paragraph([{ text: l.footer, size: 18, color: "6B6B6B" }], { after: 0 }));
 
+  // A4. Plain: 2 cm margins. On the letterhead: clear of its header bar and contact bar.
+  const margins = artwork
+    ? `w:top="${mmToTwips(LETTERHEAD.topMm)}" w:right="${mmToTwips(LETTERHEAD.sideMm)}" w:bottom="${mmToTwips(LETTERHEAD.bottomMm)}" w:left="${mmToTwips(LETTERHEAD.sideMm)}" w:header="0" w:footer="0"`
+    : 'w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708"';
   const documentXml =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>' +
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>' +
     body.join("") +
-    // A4, 2 cm margins.
-    '<w:sectPr><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708" w:gutter="0"/></w:sectPr>' +
+    `<w:sectPr>${artwork ? '<w:headerReference w:type="default" r:id="rIdHeader"/>' : ""}<w:pgSz w:w="11906" w:h="16838"/><w:pgMar ${margins} w:gutter="0"/></w:sectPr>` +
     "</w:body></w:document>";
 
   const contentTypes =
@@ -67,7 +100,9 @@ export function buildDocx(l: RenderedLetter, now: Date = new Date()): Buffer {
     '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
     '<Default Extension="xml" ContentType="application/xml"/>' +
+    (artwork ? '<Default Extension="png" ContentType="image/png"/>' : "") +
     '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
+    (artwork ? '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>' : "") +
     "</Types>";
 
   const rels =
@@ -77,12 +112,21 @@ export function buildDocx(l: RenderedLetter, now: Date = new Date()): Buffer {
     "</Relationships>";
 
   const enc = (s: string) => new TextEncoder().encode(s);
-  return buildZip(
-    [
-      { name: "[Content_Types].xml", data: enc(contentTypes) },
-      { name: "_rels/.rels", data: enc(rels) },
-      { name: "word/document.xml", data: enc(documentXml) },
-    ],
-    now
-  );
+  const parts: { name: string; data: Uint8Array }[] = [
+    { name: "[Content_Types].xml", data: enc(contentTypes) },
+    { name: "_rels/.rels", data: enc(rels) },
+    { name: "word/document.xml", data: enc(documentXml) },
+  ];
+  if (artwork) {
+    const relationships = (items: string) =>
+      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${items}</Relationships>`;
+    const office = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+    parts.push(
+      { name: "word/_rels/document.xml.rels", data: enc(relationships(`<Relationship Id="rIdHeader" Type="${office}/header" Target="header1.xml"/>`)) },
+      { name: "word/header1.xml", data: enc(artworkHeader()) },
+      { name: "word/_rels/header1.xml.rels", data: enc(relationships(`<Relationship Id="rIdImage" Type="${office}/image" Target="media/letterhead.png"/>`)) },
+      { name: "word/media/letterhead.png", data: artwork }
+    );
+  }
+  return buildZip(parts, now);
 }

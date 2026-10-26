@@ -57,8 +57,9 @@ export default function SettingsForm({ onSaved }: { onSaved: (s: LetterSettings)
     <div className="card">
       <h2 style={{ marginTop: 0 }}>Letterhead and signatory</h2>
       <p style={{ color: "var(--muted)", marginTop: 0, fontSize: "0.9rem" }}>
-        These appear at the top and bottom of every letter. The signatory is only a typed name under the closing; a letter is never marked as signed or approved because of
-        it.
+        Letters are printed and downloaded on the Kitchen Respray letterhead (logo, header and contact bar), so the company name, address, phone, email and website here are not
+        printed again. They are still used when the AI service writes in the company&apos;s name and in the CRM message drafts. The signatory is only a typed name under the
+        closing; a letter is never marked as signed or approved because of it.
       </p>
       {tableMissing && (
         <p className="error-text">The letters tables are not set up yet. Run the letters migration in Supabase, then reload.</p>

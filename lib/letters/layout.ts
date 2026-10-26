@@ -62,9 +62,13 @@ export function bannerFor(status: LetterContent["status"], letterType: string): 
   return null;
 }
 
-export function renderLetter(settings: LetterSettings, c: LetterContent): RenderedLetter {
+/**
+ * `artwork` is for the company letterhead artwork, which carries the logo, address and contact details itself, so
+ * the typed letterhead lines are left off rather than printed on top of it.
+ */
+export function renderLetter(settings: LetterSettings, c: LetterContent, options: { artwork?: boolean } = {}): RenderedLetter {
   const contact = [settings.phone, settings.email, settings.website].filter(Boolean).join("  ·  ");
-  const letterhead = [settings.company_name || "", ...lines(settings.address), contact].filter(Boolean);
+  const letterhead = options.artwork ? [] : [settings.company_name || "", ...lines(settings.address), contact].filter(Boolean);
 
   const r = c.recipient || {};
   const recipientLines = [r.name, r.organisation, ...lines(r.address), r.phone ? `Tel: ${r.phone}` : "", r.email ? `Email: ${r.email}` : ""].filter((x): x is string => !!x && !!x.trim());

@@ -477,9 +477,10 @@ button {
 
 /* Letter Writer: print only the letter. Everything marked no-print, and the app chrome, is hidden. */
 @media print {
+  /* No page margin: the letterhead artwork runs to the edges of the sheet, and the letter keeps clear of its header and footer with its own padding. */
   @page {
     size: A4;
-    margin: 18mm;
+    margin: 0;
   }
   .no-print,
   .sidebar,
@@ -494,11 +495,22 @@ button {
     padding: 0 !important;
     margin: 0 !important;
   }
+  .letter-page {
+    width: 210mm !important;
+  }
   .letter-sheet {
     border: none !important;
     box-shadow: none !important;
-    padding: 0 !important;
-    min-height: 0 !important;
+    /* Clear of the logo and header bar (56 mm), the contact bar (24 mm) and the sides (20 mm); see lib/letters/letterhead.ts. */
+    padding: 56mm 20mm 24mm !important;
+    min-height: 297mm !important;
+    aspect-ratio: auto !important;
+    background-size: 210mm 297mm !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+    /* A long letter carries the same margins, and the letterhead, onto its next page. */
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
   }
 }
 

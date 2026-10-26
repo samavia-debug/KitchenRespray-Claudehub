@@ -510,6 +510,9 @@ describe("12. The rest of the dashboard is untouched", () => {
       "app/api/letters/technicians/[userId]/route.ts", "app/dashboard/letters/page.tsx", "app/dashboard/letters/writer.tsx",
       "lib/letters/config.ts", "lib/letters/facts.ts", "lib/letters/layout.ts", "lib/letters/service.ts", "lib/letters/validate.ts",
       "lib/letters/staff-address.ts", "lib/letters/stock.ts", "lib/letters/stock.test.ts",
+      // Letter Writer prints and exports on the company letterhead artwork.
+      "public/letterhead.png", "lib/letters/letterhead.ts", "lib/letters/letterhead-image.ts", "lib/letters/letterhead.test.ts", "lib/letters/docx.ts",
+      "app/dashboard/letters/letter-preview.tsx", "app/dashboard/letters/settings-form.tsx", "app/api/letters/[id]/docx/route.ts",
     ];
     expect(out.filter((f) => ![".gitignore", "app/dashboard/layout.tsx", "app/dashboard/sidebar-nav.tsx", "app/globals.css", "lib/letters/prompt.ts", ...later].includes(f))).toEqual([]);
   });
