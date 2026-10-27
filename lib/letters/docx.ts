@@ -65,11 +65,36 @@ function artworkHeader(): string {
   );
 }
 
+export type SignatureImage = { data: Uint8Array; type: "png" | "jpeg"; width: number; height: number };
+
+const SIGNATURE_HEIGHT_MM = 15;
+const SIGNATURE_MAX_WIDTH_MM = 60;
+
+/** The signature picture on its own line, where the room to sign was: 15 mm high, or narrower if it is a wide one. */
+function signaturePicture(sig: SignatureImage): string {
+  const aspect = sig.height > 0 ? sig.width / sig.height : 3;
+  const heightMm = Math.min(SIGNATURE_HEIGHT_MM, SIGNATURE_MAX_WIDTH_MM / aspect);
+  const cy = mmToEmu(heightMm);
+  const cx = Math.round(cy * aspect);
+  return (
+    '<w:p><w:pPr><w:spacing w:after="0"/></w:pPr><w:r><w:drawing>' +
+    '<wp:inline distT="0" distB="0" distL="0" distR="0">' +
+    `<wp:extent cx="${cx}" cy="${cy}"/>` +
+    '<wp:docPr id="2" name="Signature" descr="Signature"/><wp:cNvGraphicFramePr/>' +
+    '<a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/picture"><pic:pic>' +
+    '<pic:nvPicPr><pic:cNvPr id="0" name="signature"/><pic:cNvPicPr/></pic:nvPicPr>' +
+    '<pic:blipFill><a:blip r:embed="rIdSign"/><a:stretch><a:fillRect/></a:stretch></pic:blipFill>' +
+    `<pic:spPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="${cx}" cy="${cy}"/></a:xfrm><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></pic:spPr>` +
+    '</pic:pic></a:graphicData></a:graphic></wp:inline></w:drawing></w:r></w:p>'
+  );
+}
+
 /**
  * The letter as a Word document: the same content as the preview, as plain editable paragraphs. With `artwork`
  * (the letterhead picture) it is placed behind every page and the margins keep the text clear of its header and footer.
+ * With `signature` (the signer's picture) it is placed above the typed name, in the room left to sign.
  */
-export function buildDocx(l: RenderedLetter, now: Date = new Date(), artwork?: Uint8Array): Buffer {
+export function buildDocx(l: RenderedLetter, now: Date = new Date(), artwork?: Uint8Array, signature?: SignatureImage): Buffer {
   const body: string[] = [];
 
   if (l.banner) body.push(paragraph([{ text: l.banner, bold: true, color: "B3261E", size: 20 }], { after: 240 }));
@@ -100,7 +125,13 @@ export function buildDocx(l: RenderedLetter, now: Date = new Date(), artwork?: U
     });
   });
   if (l.closing) body.push(paragraph([{ text: l.closing }], { after: 120 }));
-  l.signature.forEach((line, i) => body.push(paragraph([{ text: line, bold: i === 2 }], { after: 0 })));
+  if (signature) {
+    // The picture takes the place of the two blank lines left to sign in.
+    body.push(signaturePicture(signature));
+    l.signature.slice(2).forEach((line, i) => body.push(paragraph([{ text: line, bold: i === 0 }], { after: 0 })));
+  } else {
+    l.signature.forEach((line, i) => body.push(paragraph([{ text: line, bold: i === 2 }], { after: 0 })));
+  }
   if (l.footer) body.push(paragraph([{ text: l.footer, size: 18, color: "6B6B6B" }], { after: 0 }));
 
   // A4. Plain: 2 cm margins. On the letterhead: clear of its header bar and contact bar.
@@ -109,7 +140,9 @@ export function buildDocx(l: RenderedLetter, now: Date = new Date(), artwork?: U
     : 'w:top="1134" w:right="1134" w:bottom="1134" w:left="1134" w:header="708" w:footer="708"';
   const documentXml =
     '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
-    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body>' +
+    '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"' +
+    ' xmlns:wp="http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main"' +
+    ' xmlns:pic="http://schemas.openxmlformats.org/drawingml/2006/picture"><w:body>' +
     body.join("") +
     `<w:sectPr>${artwork ? '<w:headerReference w:type="default" r:id="rIdHeader"/>' : ""}<w:pgSz w:w="11906" w:h="16838"/><w:pgMar ${margins} w:gutter="0"/></w:sectPr>` +
     "</w:body></w:document>";
@@ -119,7 +152,8 @@ export function buildDocx(l: RenderedLetter, now: Date = new Date(), artwork?: U
     '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
     '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
     '<Default Extension="xml" ContentType="application/xml"/>' +
-    (artwork ? '<Default Extension="png" ContentType="image/png"/>' : "") +
+    (artwork || signature?.type === "png" ? '<Default Extension="png" ContentType="image/png"/>' : "") +
+    (signature?.type === "jpeg" ? '<Default Extension="jpg" ContentType="image/jpeg"/>' : "") +
     '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>' +
     (artwork ? '<Override PartName="/word/header1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.header+xml"/>' : "") +
     "</Types>";
@@ -136,16 +170,23 @@ export function buildDocx(l: RenderedLetter, now: Date = new Date(), artwork?: U
     { name: "_rels/.rels", data: enc(rels) },
     { name: "word/document.xml", data: enc(documentXml) },
   ];
+  const relationships = (items: string) =>
+    `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${items}</Relationships>`;
+  const office = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
+  const signatureFile = signature ? `signature.${signature.type === "png" ? "png" : "jpg"}` : "";
+
+  const documentRels = [
+    artwork ? `<Relationship Id="rIdHeader" Type="${office}/header" Target="header1.xml"/>` : "",
+    signature ? `<Relationship Id="rIdSign" Type="${office}/image" Target="media/${signatureFile}"/>` : "",
+  ].join("");
+  if (documentRels) parts.push({ name: "word/_rels/document.xml.rels", data: enc(relationships(documentRels)) });
   if (artwork) {
-    const relationships = (items: string) =>
-      `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${items}</Relationships>`;
-    const office = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     parts.push(
-      { name: "word/_rels/document.xml.rels", data: enc(relationships(`<Relationship Id="rIdHeader" Type="${office}/header" Target="header1.xml"/>`)) },
       { name: "word/header1.xml", data: enc(artworkHeader()) },
       { name: "word/_rels/header1.xml.rels", data: enc(relationships(`<Relationship Id="rIdImage" Type="${office}/image" Target="media/letterhead.png"/>`)) },
       { name: "word/media/letterhead.png", data: artwork }
     );
   }
+  if (signature) parts.push({ name: `word/media/${signatureFile}`, data: signature.data });
   return buildZip(parts, now);
 }

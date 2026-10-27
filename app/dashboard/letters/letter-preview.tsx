@@ -92,8 +92,20 @@ export default function LetterPreview({ settings, content }: { settings: LetterS
 
         {l.closing && <p style={{ ...text, marginBottom: 0 }}>{l.closing}</p>}
         <div style={{ marginTop: "0.4em" }}>
-          {l.signature.map((line, i) => (
-            <div key={i} style={{ fontWeight: i === 2 ? 700 : 400, minHeight: line ? undefined : "1.2em", color: line.startsWith("[") ? "#b3261e" : undefined }}>
+          {/* The signature picture takes the place of the two blank lines to sign in. It is only here once the letter may show one; a removed picture just leaves the space. */}
+          {l.signerId && (
+            <div style={{ position: "relative", height: "2.6em" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={`/api/letters/signers/${l.signerId}/image`}
+                alt="Signature"
+                onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = "none")}
+                style={{ position: "absolute", left: 0, bottom: 0, maxHeight: "2.9em", maxWidth: "45%", mixBlendMode: "multiply" }}
+              />
+            </div>
+          )}
+          {(l.signerId ? l.signature.slice(2) : l.signature).map((line, i) => (
+            <div key={i} style={{ fontWeight: i === (l.signerId ? 0 : 2) ? 700 : 400, minHeight: line ? undefined : "1.2em", color: line.startsWith("[") ? "#b3261e" : undefined }}>
               {line || " "}
             </div>
           ))}

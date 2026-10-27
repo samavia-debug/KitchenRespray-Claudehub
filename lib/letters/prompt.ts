@@ -12,6 +12,8 @@ export type LetterDetails = {
   /** Typed over the address block and the signature on this letter; never sent to the AI service. */
   addressBlock?: string;
   signatureBlock?: string;
+  /** The signer chosen for this letter; their picture is placed above the typed name once the letter is finalised. */
+  signerId?: string;
 };
 
 export type Draft = { subject: string; greeting: string; body: string; closing: string; missing: string[] };

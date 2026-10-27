@@ -1,6 +1,7 @@
 import { validIsoDate } from "../compliance/extract";
 import { FACT_LABEL, LETTER_TYPE_BY_KEY, type FactKey, type LetterStatus } from "./config";
 import type { LetterFacts } from "./facts";
+import { SIGNER_ID } from "./signers";
 import { DRAFT_LIMITS, unresolvedPlaceholders, type LetterDetails, type Recipient } from "./prompt";
 
 const text = (v: unknown, max: number): string => (typeof v === "string" ? v.replace(/\r\n/g, "\n").replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/g, "").trim().slice(0, max) : "");
@@ -23,6 +24,7 @@ export function cleanDetails(v: unknown): LetterDetails {
     includeContact: d.includeContact === true,
     addressBlock: text(d.addressBlock, 600),
     signatureBlock: text(d.signatureBlock, 300),
+    signerId: typeof d.signerId === "string" && SIGNER_ID.test(d.signerId.trim()) ? d.signerId.trim().toLowerCase() : "",
   };
 }
 

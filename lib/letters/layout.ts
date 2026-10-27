@@ -1,6 +1,7 @@
 import { LETTER_TYPE_BY_KEY } from "./config";
 import { formatLongDate } from "./facts";
 import { parseBlocks, type Block } from "./format";
+import { SIGNER_ID, showSignatureImage } from "./signers";
 import type { LetterDetails, Recipient } from "./prompt";
 
 export type LetterSettings = {
@@ -35,7 +36,7 @@ export type LetterContent = {
   body: string;
   closing: string;
   /** Typed over the address block and the signature on this letter only; the rest of `details` is not used for layout. */
-  details?: Pick<LetterDetails, "addressBlock" | "signatureBlock">;
+  details?: Pick<LetterDetails, "addressBlock" | "signatureBlock" | "signerId">;
 };
 
 export type RenderedLetter = {
@@ -51,6 +52,8 @@ export type RenderedLetter = {
   closing: string;
   /** Typed signatory block; empty lines leave room for a handwritten signature. */
   signature: string[];
+  /** The signer whose signature picture goes above the typed name, only once the letter may show one. */
+  signerId: string | null;
   footer: string | null;
 };
 
@@ -104,6 +107,7 @@ export function renderLetter(settings: LetterSettings, c: LetterContent, options
     blocks: parseBlocks(c.body),
     closing: c.closing.trim(),
     signature,
+    signerId: c.details?.signerId && SIGNER_ID.test(c.details.signerId) && showSignatureImage(c.status, c.letter_type) ? c.details.signerId : null,
     footer: settings.footer_text?.trim() || null,
   };
 }

@@ -7,8 +7,9 @@ import Writer from "./writer";
 import SavedLetters from "./saved-letters";
 import SettingsForm from "./settings-form";
 import Templates from "./templates";
+import Signatures from "./signatures";
 
-const SECTIONS = ["Write a letter", "Saved letters", "Templates", "Letterhead"] as const;
+const SECTIONS = ["Write a letter", "Saved letters", "Templates", "Signatures", "Letterhead"] as const;
 
 export default function LettersPage() {
   const supabase = createClient();
@@ -20,6 +21,7 @@ export default function LettersPage() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [settingsKey, setSettingsKey] = useState(0);
   const [templatesKey, setTemplatesKey] = useState(0);
+  const [signersKey, setSignersKey] = useState(0);
 
   useEffect(() => {
     async function init() {
@@ -73,10 +75,11 @@ export default function LettersPage() {
 
           {/* Kept mounted so a letter being written is not lost when switching tabs. */}
           <div style={{ display: section === "Write a letter" ? "block" : "none" }}>
-            <Writer key={writerKey} openId={openId} settingsKey={settingsKey} templatesKey={templatesKey} onSaved={() => setRefreshKey((k) => k + 1)} onTemplatesChanged={() => setTemplatesKey((k) => k + 1)} />
+            <Writer key={writerKey} openId={openId} settingsKey={settingsKey} templatesKey={templatesKey} signersKey={signersKey} onSaved={() => setRefreshKey((k) => k + 1)} onTemplatesChanged={() => setTemplatesKey((k) => k + 1)} />
           </div>
           {section === "Saved letters" && <SavedLetters onOpen={open} refreshKey={refreshKey} />}
           {section === "Templates" && <Templates refreshKey={templatesKey} onChanged={() => setTemplatesKey((k) => k + 1)} />}
+          {section === "Signatures" && <Signatures refreshKey={signersKey} onChanged={() => setSignersKey((k) => k + 1)} />}
           {section === "Letterhead" && <SettingsForm onSaved={() => setSettingsKey((k) => k + 1)} />}
         </>
       ) : (

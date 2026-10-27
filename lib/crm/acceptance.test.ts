@@ -518,6 +518,9 @@ describe("12. The rest of the dashboard is untouched", () => {
       "app/api/letters/templates/route.ts", "app/api/letters/templates/[id]/route.ts",
       // Letter Writer: bold, italic and lists, an editable address block and sign-off, and updating a letter when a detail changes.
       "lib/letters/format.ts", "lib/letters/format.test.ts", "lib/letters/refresh.ts", "lib/letters/refresh.test.ts", "lib/letters/rich.test.ts",
+      // Letter Writer signatures: who signs, and their signature picture on finalised letters.
+      "lib/letters/signers.ts", "lib/letters/signers.test.ts", "lib/letters/signer-service.ts", "app/dashboard/letters/signatures.tsx", "app/dashboard/letters/signature-pad.tsx",
+      "app/dashboard/letters/signature-image.ts", "app/api/letters/signers/route.ts", "app/api/letters/signers/[id]/route.ts", "app/api/letters/signers/[id]/image/route.ts",
       // Fleet: the van list with finance figures and tax, DOE and insurance due dates (the cron runs its warnings; the compliance service shares its notifier check).
       "app/dashboard/fleet/page.tsx", "app/dashboard/fleet/fleet-view.tsx", "app/api/fleet/route.ts", "app/api/fleet/[id]/route.ts", "app/api/fleet/import/route.ts",
       "lib/fleet/fleet.ts", "lib/fleet/import.ts", "lib/fleet/service.ts", "lib/fleet/fleet.test.ts", "app/api/monitoring/cron/route.ts", "lib/compliance/service.ts",

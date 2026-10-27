@@ -10,6 +10,7 @@ import { unresolvedPlaceholders, type LetterDetails, type Recipient } from "@/li
 import { buildFromStock, fillStock, staffAsRecipient, stockFor, type StockContext } from "@/lib/letters/stock";
 import { TEMPLATE_CATEGORY_LABEL, buildFromTemplate, generaliseLetterText, type LetterTemplate } from "@/lib/letters/templates";
 import type { LetterRow, TechnicianListItem } from "@/lib/letters/service";
+import { showSignatureImage, signerLines, type Signer } from "@/lib/letters/signers";
 import LetterPreview from "./letter-preview";
 
 const todayIso = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
@@ -27,18 +28,21 @@ export default function Writer({
   openId,
   settingsKey,
   templatesKey,
+  signersKey,
   onSaved,
   onTemplatesChanged,
 }: {
   openId: string | null;
   settingsKey: number;
   templatesKey: number;
+  signersKey: number;
   onSaved: () => void;
   onTemplatesChanged: () => void;
 }) {
   const [techs, setTechs] = useState<TechnicianListItem[] | null>(null);
   const [templates, setTemplates] = useState<LetterTemplate[]>([]);
   const [templateId, setTemplateId] = useState("");
+  const [signers, setSigners] = useState<Signer[]>([]);
   /** The details the letter's wording was last filled from, to see which have changed since. */
   const [filledWith, setFilledWith] = useState<StockContext | null>(null);
   const bodyRef = useRef<HTMLTextAreaElement>(null);
@@ -93,6 +97,13 @@ export default function Writer({
       .then(async (res) => (res.ok ? setTemplates((await res.json()).templates ?? []) : undefined))
       .catch(() => undefined);
   }, [templatesKey]);
+
+  // The people who sign letters are read again whenever they are changed on the Signatures tab.
+  useEffect(() => {
+    fetch("/api/letters/signers")
+      .then(async (res) => (res.ok ? setSigners((await res.json()).signers ?? []) : undefined))
+      .catch(() => undefined);
+  }, [signersKey]);
 
   const reset = useCallback(() => {
     setTemplateId("");
@@ -278,6 +289,7 @@ export default function Writer({
         setDraft({ subject: body.draft.subject, greeting: body.draft.greeting, body: body.draft.body, closing: body.draft.closing });
         setMissing(body.draft.missing);
         setFilledWith(stockContext());
+        startWithUsualSigner();
         setFacts(body.facts);
         setAdded({});
         if (!recipient.name && body.recipientName) setRecipient((r) => ({ ...r, name: body.recipientName }));
@@ -305,9 +317,34 @@ export default function Writer({
     setDraft({ subject: d.subject, greeting: d.greeting, body: d.body, closing: d.closing });
     setMissing(d.missing);
     setFilledWith(ctx);
+    startWithUsualSigner();
     setAiGenerated(false);
     setDirty(true);
     setNotice({ kind: "ok", text: "Letter written. Check it, add or change any paragraph below, then save it." });
+  }
+
+  /** Who signs: their typed name and job title go under the closing, and their picture above it once the letter is finalised. */
+  function chooseSigner(id: string) {
+    const signer = signers.find((s) => s.id === id);
+    setDetails((d) => {
+      const next = { ...d };
+      if (signer) {
+        next.signerId = signer.id;
+        next.signatureBlock = signerLines(signer);
+      } else {
+        delete next.signerId;
+        delete next.signatureBlock;
+      }
+      return next;
+    });
+    setDirty(true);
+  }
+
+  /** A new letter starts with the usual signer, if there is one and nobody has been chosen or typed. */
+  function startWithUsualSigner() {
+    const usual = signers.find((s) => s.is_default && s.active);
+    if (!usual || details.signerId || details.signatureBlock) return;
+    setDetails((d) => ({ ...d, signerId: usual.id, signatureBlock: signerLines(usual) }));
   }
 
   /** Bold, italic or a list on whatever is selected in the letter text. */
@@ -482,12 +519,13 @@ export default function Writer({
     greeting: draft?.greeting ?? "",
     body: draft?.body ?? "",
     closing: draft?.closing ?? "",
-    details: { addressBlock: details.addressBlock, signatureBlock: details.signatureBlock },
+    details: { addressBlock: details.addressBlock, signatureBlock: details.signatureBlock, signerId: details.signerId },
   };
 
   // The address block and sign-off as they stand: what was typed over them, or what the details give.
   const addressText = details.addressBlock ?? recipientLinesOf(recipient).join("\n");
   const signatureText = details.signatureBlock ?? signatureLinesOf(settings).slice(2).join("\n");
+  const signerPicture = !!signers.find((s) => s.id === details.signerId)?.has_image;
   const setBlock = (key: "addressBlock" | "signatureBlock", value: string | undefined) => {
     setDetails((d) => {
       const next = { ...d };
@@ -892,14 +930,35 @@ export default function Writer({
             <div className="field">
               <label>
                 Signed off by
-                {details.signatureBlock !== undefined && !locked && (
-                  <button type="button" className="btn btn-secondary" style={{ marginLeft: "0.5rem", padding: "0.1rem 0.5rem", fontSize: "0.72rem" }} onClick={() => setBlock("signatureBlock", undefined)}>
+                {(details.signatureBlock !== undefined || details.signerId) && !locked && (
+                  <button type="button" className="btn btn-secondary" style={{ marginLeft: "0.5rem", padding: "0.1rem 0.5rem", fontSize: "0.72rem" }} onClick={() => chooseSigner("")}>
                     Use the Letterhead tab details
                   </button>
                 )}
               </label>
+              {signers.length > 0 && (
+                <select value={details.signerId ?? ""} disabled={locked} onChange={(e) => chooseSigner(e.target.value)} aria-label="Who signs" style={{ marginBottom: "0.4rem" }}>
+                  <option value="">Typed name only, or type it below</option>
+                  {signers
+                    .filter((s) => s.active || s.id === details.signerId)
+                    .map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                        {s.title ? ", " + s.title : ""}
+                        {s.has_image ? " (signature picture)" : ""}
+                      </option>
+                    ))}
+                </select>
+              )}
               <textarea rows={2} value={signatureText} readOnly={locked} onChange={(e) => setBlock("signatureBlock", e.target.value)} />
-              <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>Name, then job title. Room to sign is left above it. This is only typed words; the letter is never marked as signed because of it.</div>
+              <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
+                Name, then job title. Room to sign is left above it.
+                {signerPicture
+                  ? showSignatureImage(status, type || "custom")
+                    ? " The signature picture is on the letter."
+                    : " The signature picture appears once the letter is finalised (once approved, for a warning or a reference); a draft is never shown as signed."
+                  : " No signature picture is used, so sign it by hand."}
+              </div>
             </div>
 
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
