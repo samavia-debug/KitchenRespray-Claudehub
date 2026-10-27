@@ -161,7 +161,12 @@ export default function FleetView() {
         setPreview(body);
       }
     } catch (e: any) {
-      setMessage(`Error: ${e.message}`);
+      // "Failed to fetch" is the browser's wording for no reply at all.
+      setMessage(
+        /failed to fetch|networkerror|load failed/i.test(e.message || "")
+          ? "Error: The server did not answer, so nothing was imported. Check the Hub is running and your connection, then try again. If it keeps happening, the file may be open in Excel or still syncing from OneDrive: save a copy to your desktop and choose that."
+          : `Error: ${e.message}`
+      );
     }
     setImporting(false);
   }
@@ -237,12 +242,12 @@ export default function FleetView() {
           <div className="card" style={{ marginBottom: "1.25rem" }}>
             <h2 style={{ marginTop: 0 }}>Import from Excel</h2>
             <p style={{ margin: "0 0 0.75rem", fontSize: "0.85rem", color: "var(--muted)" }}>
-              Choose the van list spreadsheet. New vans are added and the figures for vans already here are updated. A blank cell never wipes what is in the Hub, and a due date typed here is only replaced by a real date in the file, never by a month name such as &ldquo;june&rdquo;.
+              Choose the van list as an Excel (.xlsx) or CSV file. New vans are added and the figures for vans already here are updated. A blank cell never wipes what is in the Hub, and a due date typed here is only replaced by a real date in the file, never by a month name such as &ldquo;june&rdquo;.
             </p>
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
               <input
                 type="file"
-                accept=".xlsx"
+                accept=".xlsx,.csv"
                 onChange={(e) => {
                   setFile(e.target.files?.[0] ?? null);
                   setPreview(null);
@@ -254,7 +259,7 @@ export default function FleetView() {
             </div>
             {preview && (
               <div style={{ marginTop: "0.75rem", fontSize: "0.9rem" }}>
-                <div style={{ marginBottom: "0.5rem" }}>
+                <div style={{ marginBottom: "0.5rem", display: preview.sheets.length > 1 ? "block" : "none" }}>
                   <label style={{ fontSize: "0.82rem", marginRight: "0.5rem" }}>Sheet</label>
                   <select value={preview.sheetIndex} onChange={(e) => sendImport(false, Number(e.target.value))} disabled={importing}>
                     {preview.sheets.map((s, i) => (

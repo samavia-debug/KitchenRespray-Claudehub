@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/session";
 import { MAX_FILE_BYTES } from "@/lib/crm/import/parse";
 import { ZipError } from "@/lib/crm/import/zip-read";
-import { readFleetWorkbook } from "@/lib/fleet/import";
+import { readFleetFile } from "@/lib/fleet/import";
 import { importVans, previewImport } from "@/lib/fleet/service";
 
 export const maxDuration = 30;
@@ -23,14 +23,14 @@ export async function POST(request: Request) {
   }
   const file = form.get("file");
   if (!(file instanceof File)) return NextResponse.json({ error: "Choose a file to upload." }, { status: 400 });
-  if (!/\.xlsx$/i.test(file.name)) return NextResponse.json({ error: "Upload the van list as an Excel (.xlsx) file." }, { status: 400 });
+  if (!/\.(xlsx|csv)$/i.test(file.name)) return NextResponse.json({ error: "Upload the van list as an Excel (.xlsx) or CSV file." }, { status: 400 });
   if (file.size > MAX_FILE_BYTES) return NextResponse.json({ error: "That file is too large." }, { status: 413 });
 
   const sheetField = form.get("sheet");
   const sheet = typeof sheetField === "string" && /^\d+$/.test(sheetField) ? Number(sheetField) : undefined;
 
   try {
-    const read = readFleetWorkbook(Buffer.from(await file.arrayBuffer()), sheet);
+    const read = readFleetFile(file.name, Buffer.from(await file.arrayBuffer()), sheet);
     if (!read.sheet || read.sheet.vans.length === 0) {
       return NextResponse.json({ error: "No van list was found on that sheet. It needs a heading row with Reg and Model (or Driver).", sheets: read.sheets, sheetIndex: read.sheetIndex }, { status: 400 });
     }

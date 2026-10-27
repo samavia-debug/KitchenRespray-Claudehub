@@ -14,7 +14,7 @@ import {
   tidyReg,
   type Van,
 } from "./fleet";
-import { readVanSheet } from "./import";
+import { readFleetFile, readVanSheet } from "./import";
 
 const TODAY = "2026-08-26";
 
@@ -203,5 +203,38 @@ describe("reading the van list sheet", () => {
 
   it("returns nothing for a sheet with no van list", () => {
     expect(readVanSheet([row({ 1: "Just", 2: "notes" })])).toBeNull();
+  });
+});
+
+describe("a CSV export of the van list", () => {
+  // What Excel writes for one sheet: the same layout, blank rows and empty columns kept, amounts as formatted, and the
+  // address lines under the list. Everything here is made up.
+  const csv = [
+    ",,,,,,,,,,,,,,,,,,,,,,,,,,,,",
+    ",,Fleet Info,,,,,,,,,,,,,,,,,,,,,,,,,,",
+    ",,,,,,,,,,,,,,,,,,,,,,,,,,,,",
+    ",,Reg,,Model,,Driver,,,Lender,,Agreement,,Value,,Monthly,,Settlement,,Equity,,Weight,,Tax Pin,,Tax Expires,,DOE Expires",
+    ',1,161 D  5265,,Renault Traffic,,Spare,,,First citizen,,,,"€9,000",,,,0,,"€9,000",,3010 kg,,117854,,Agu,,',
+    ",,,,,,,,,,,,,,,,,,,,,,,,,,,,",
+    ',2,231 D 10647,,Renault Traffic,,Gary.,,,finance Ireland,,,,"€25,000",,"€400.50",,"€20,000.00",,"€5,000",,,,,,04/11/2026,,05/10/2026',
+    ",,,,,,,,,,,,,,,,,,,,,,,,,,,,",
+    ',,,,,,,,,,,,,,,,"€34,000",,"€20,000",,,,,,,,,',
+    ",,FIRST CITIZEN,,,,,,,,Close brothers,,,,,,,,,,,,,,,,,,",
+  ].join("\r\n");
+
+  it("is read like a sheet, whatever its blank columns and rows", () => {
+    const read = readFleetFile("New Van List 2024(Aug 26).csv", Buffer.from(csv));
+    expect(read.sheets).toEqual(["CSV file"]);
+    const vans = read.sheet!.vans;
+    expect(vans.map((v) => v.reg)).toEqual(["161 D 5265", "231 D 10647"]);
+    expect(vans[0]).toMatchObject({ value_eur: 9000, settlement_eur: 0, weight_kg: 3010, model: "Renault Traffic" });
+    expect(vans[0].monthNotes).toEqual(['Tax "Agu"']);
+    expect(vans[1]).toMatchObject({ value_eur: 25000, monthly_eur: 400.5, settlement_eur: 20000, tax_due: "2026-11-04", doe_due: "2026-10-05" });
+    expect(read.sheet!.warnings).toEqual([]);
+  });
+
+  it("still takes a CSV saved with semicolons by a European Excel", () => {
+    const semi = "Reg;Model;Driver;Value\n191 D 30807;Opel Vivaro;Mike;15000\n";
+    expect(readFleetFile("vans.csv", Buffer.from(semi)).sheet!.vans[0]).toMatchObject({ reg: "191 D 30807", value_eur: 15000 });
   });
 });

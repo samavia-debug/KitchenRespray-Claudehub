@@ -1,3 +1,4 @@
+import { decodeCsv, parseCsv } from "../crm/import/csv";
 import { readXlsx } from "../crm/import/xlsx-read";
 import { ZipError } from "../crm/import/zip-read";
 import { IRISH_REG, parseDueDate, parseMoney, parseWeight, regKey, tidyReg } from "./fleet";
@@ -116,6 +117,16 @@ export function readVanSheet(rows: string[][]): VanSheet | null {
 }
 
 export type ReadFleetFile = { sheets: string[]; sheetIndex: number; sheet: VanSheet | null };
+
+/** A CSV export of one sheet is a single list; an .xlsx can have several, so it goes through the workbook reader. */
+export function readFleetFile(filename: string, buf: Buffer, wanted?: number): ReadFleetFile {
+  if (/\.(csv|tsv|txt)$/i.test(filename) && !(buf[0] === 0x50 && buf[1] === 0x4b)) {
+    // Blank rows are dropped, as the workbook reader does, so a gap in the list does not look like its end.
+    const rows = parseCsv(decodeCsv(buf)).filter((r) => r.some((c) => c.trim() !== ""));
+    return { sheets: ["CSV file"], sheetIndex: 0, sheet: readVanSheet(rows) };
+  }
+  return readFleetWorkbook(buf, wanted);
+}
 
 /** Reads one sheet of an uploaded workbook. With no sheet chosen, the last one with a van list is used (the newest tab), skipping a "Gone" tab. */
 export function readFleetWorkbook(buf: Buffer, wanted?: number): ReadFleetFile {
