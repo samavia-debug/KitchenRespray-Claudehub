@@ -154,6 +154,7 @@ const TOKEN_LABEL: Record<string, string> = {
   purposeText: "the text of the letter",
   period: "the dates",
   reference: "the reference number",
+  recipientName: "the name of the person the letter is addressed to",
 };
 
 const oneLine = (s: string | undefined) => (s ?? "").replace(/\s+/g, " ").trim();
@@ -187,6 +188,7 @@ function tokenValues(ctx: StockContext): Record<string, string> {
     purposeText: (ctx.details.purpose ?? "").replace(/\r\n/g, "\n").trim(),
     period: periodText(ctx.details),
     reference: oneLine(ctx.details.reference),
+    recipientName: oneLine(ctx.recipient.name),
   };
 }
 

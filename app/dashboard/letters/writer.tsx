@@ -6,6 +6,7 @@ import { applyAdded, formatLongDate, missingFacts, type LetterFacts } from "@/li
 import { EMPTY_SETTINGS, type LetterSettings } from "@/lib/letters/layout";
 import { unresolvedPlaceholders, type LetterDetails, type Recipient } from "@/lib/letters/prompt";
 import { buildFromStock, fillStock, staffAsRecipient, stockFor, type StockContext } from "@/lib/letters/stock";
+import { TEMPLATE_CATEGORY_LABEL, buildFromTemplate, generaliseLetterText, type LetterTemplate } from "@/lib/letters/templates";
 import type { LetterRow, TechnicianListItem } from "@/lib/letters/service";
 import LetterPreview from "./letter-preview";
 
@@ -20,8 +21,22 @@ const STATUS_COLOR: Record<LetterStatus, string> = { draft: "#6f6a63", finalised
 
 type Notice = { kind: "ok" | "error"; text: string } | null;
 
-export default function Writer({ openId, settingsKey, onSaved }: { openId: string | null; settingsKey: number; onSaved: () => void }) {
+export default function Writer({
+  openId,
+  settingsKey,
+  templatesKey,
+  onSaved,
+  onTemplatesChanged,
+}: {
+  openId: string | null;
+  settingsKey: number;
+  templatesKey: number;
+  onSaved: () => void;
+  onTemplatesChanged: () => void;
+}) {
   const [techs, setTechs] = useState<TechnicianListItem[] | null>(null);
+  const [templates, setTemplates] = useState<LetterTemplate[]>([]);
+  const [templateId, setTemplateId] = useState("");
   const [techError, setTechError] = useState<string | null>(null);
   const [settings, setSettings] = useState<LetterSettings>(EMPTY_SETTINGS);
 
@@ -67,7 +82,15 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
       .catch(() => undefined);
   }, [settingsKey]);
 
+  // The company's templates are read again whenever they are changed on the Templates tab.
+  useEffect(() => {
+    fetch("/api/letters/templates")
+      .then(async (res) => (res.ok ? setTemplates((await res.json()).templates ?? []) : undefined))
+      .catch(() => undefined);
+  }, [templatesKey]);
+
   const reset = useCallback(() => {
+    setTemplateId("");
     setSearch("");
     setTechId(null);
     setFacts(null);
@@ -233,17 +256,52 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
   const stockContext = (): StockContext | null =>
     effective ? { facts: effective, company: settings.company_name || "Kitchen Respray", recipient, details } : null;
 
-  /** The whole letter from the ready-made paragraphs: instant, and only what the record and the form say. */
+  const chosenTemplate = templates.find((t) => t.id === templateId) ?? null;
+
+  /** The whole letter from the chosen template, or the ready-made paragraphs: instant, and only what the record and the form say. */
   function writeFromStock() {
     const ctx = stockContext();
     if (!ctx || !type) return;
     if (draft?.body && dirty && !window.confirm("Write the letter again? Your edits to the current letter will be replaced.")) return;
-    const d = buildFromStock(type, ctx);
+    const d = chosenTemplate ? buildFromTemplate({ ...chosenTemplate, letter_type: type }, ctx) : buildFromStock(type, ctx);
     setDraft({ subject: d.subject, greeting: d.greeting, body: d.body, closing: d.closing });
     setMissing(d.missing);
     setAiGenerated(false);
     setDirty(true);
     setNotice({ kind: "ok", text: "Letter written. Check it, add or change any paragraph below, then save it." });
+  }
+
+  /** Keeps the letter's wording as a template; the person's name and the company become {name} and {company}. */
+  async function saveAsTemplate() {
+    if (!draft || !type) return;
+    const name = window.prompt("Name for the new template:", `${config?.label ?? "Letter"}`.slice(0, 100));
+    if (!name || !name.trim()) return;
+    const company = settings.company_name || "Kitchen Respray";
+    const who = effective ?? { name: "" };
+    const g = (v: string) => generaliseLetterText(v, who, company);
+    try {
+      const res = await fetch("/api/letters/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          category: type === "general_business" || type === "custom" ? "general" : "hr",
+          letter_type: type,
+          subject: g(draft.subject),
+          greeting: "",
+          body: g(draft.body),
+          closing: draft.closing,
+        }),
+      });
+      const body = await res.json();
+      if (!res.ok) setNotice({ kind: "error", text: body.error || "Could not save the template" });
+      else {
+        setNotice({ kind: "ok", text: "Saved as a template. The name and company are now {name} and {company}; change anything else on the Templates tab." });
+        onTemplatesChanged();
+      }
+    } catch (e: any) {
+      setNotice({ kind: "error", text: e.message || "Network error" });
+    }
   }
 
   /** Adds one ready-made paragraph to the end of the letter text. */
@@ -587,6 +645,37 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
             )}
 
             {!locked && (
+              <div className="field" style={{ maxWidth: 420 }}>
+                <label>Wording to use</label>
+                <select value={templateId} onChange={(e) => setTemplateId(e.target.value)} aria-label="Wording to use">
+                  <option value="">Ready-made wording for this kind of letter</option>
+                  {templates.filter((t) => t.letter_type === type).length > 0 && (
+                    <optgroup label="Your templates for this kind of letter">
+                      {templates
+                        .filter((t) => t.letter_type === type)
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({TEMPLATE_CATEGORY_LABEL[t.category] ?? t.category})
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
+                  {templates.filter((t) => t.letter_type !== type).length > 0 && (
+                    <optgroup label="Other templates">
+                      {templates
+                        .filter((t) => t.letter_type !== type)
+                        .map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({TEMPLATE_CATEGORY_LABEL[t.category] ?? t.category})
+                          </option>
+                        ))}
+                    </optgroup>
+                  )}
+                </select>
+                <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>Add or change templates on the Templates tab.</div>
+              </div>
+            )}
+            {!locked && (
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
                 <button className="btn" onClick={writeFromStock} disabled={!effective || !type}>
                   Write the letter for me
@@ -598,7 +687,7 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
             )}
             {!locked && (
               <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
-                &ldquo;Write the letter for me&rdquo; builds it at once from ready-made paragraphs and the details above, and marks anything it does not know. The AI service writes
+                &ldquo;Write the letter for me&rdquo; builds it at once from the wording chosen above and the details on this page, and marks anything it does not know. The AI service writes
                 in its own words from the same details and takes a little longer.
               </p>
             )}
@@ -704,6 +793,11 @@ export default function Writer({ openId, settingsKey, onSaved }: { openId: strin
               {letterId && (
                 <button className="btn btn-secondary" onClick={duplicate} disabled={busy !== null || dirty}>
                   Duplicate
+                </button>
+              )}
+              {type && (
+                <button className="btn btn-secondary" onClick={saveAsTemplate} disabled={busy !== null}>
+                  Save as template
                 </button>
               )}
               <button className="btn btn-secondary" onClick={startNew}>

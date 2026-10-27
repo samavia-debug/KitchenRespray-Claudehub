@@ -6,8 +6,9 @@ import { createClient } from "@/lib/supabase/client";
 import Writer from "./writer";
 import SavedLetters from "./saved-letters";
 import SettingsForm from "./settings-form";
+import Templates from "./templates";
 
-const SECTIONS = ["Write a letter", "Saved letters", "Letterhead"] as const;
+const SECTIONS = ["Write a letter", "Saved letters", "Templates", "Letterhead"] as const;
 
 export default function LettersPage() {
   const supabase = createClient();
@@ -18,6 +19,7 @@ export default function LettersPage() {
   const [writerKey, setWriterKey] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const [settingsKey, setSettingsKey] = useState(0);
+  const [templatesKey, setTemplatesKey] = useState(0);
 
   useEffect(() => {
     async function init() {
@@ -55,7 +57,7 @@ export default function LettersPage() {
       <div className="page-header no-print">
         <h1>✉️ Letter Writer</h1>
         <p>
-          Write a letter for a technician from the details already in the dashboard: choose the person and the kind of letter, and it fills in their name, address and contact details and writes the letter from ready-made paragraphs. You check and edit it, and nothing is sent or issued from here.
+          Write a letter for a technician from the details already in the dashboard: choose the person and the kind of letter, and it fills in their name, address and contact details and writes the letter from your templates or the ready-made paragraphs. You check and edit it, and nothing is sent or issued from here.
         </p>
       </div>
 
@@ -71,9 +73,10 @@ export default function LettersPage() {
 
           {/* Kept mounted so a letter being written is not lost when switching tabs. */}
           <div style={{ display: section === "Write a letter" ? "block" : "none" }}>
-            <Writer key={writerKey} openId={openId} settingsKey={settingsKey} onSaved={() => setRefreshKey((k) => k + 1)} />
+            <Writer key={writerKey} openId={openId} settingsKey={settingsKey} templatesKey={templatesKey} onSaved={() => setRefreshKey((k) => k + 1)} onTemplatesChanged={() => setTemplatesKey((k) => k + 1)} />
           </div>
           {section === "Saved letters" && <SavedLetters onOpen={open} refreshKey={refreshKey} />}
+          {section === "Templates" && <Templates refreshKey={templatesKey} onChanged={() => setTemplatesKey((k) => k + 1)} />}
           {section === "Letterhead" && <SettingsForm onSaved={() => setSettingsKey((k) => k + 1)} />}
         </>
       ) : (
