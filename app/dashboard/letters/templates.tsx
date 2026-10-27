@@ -20,13 +20,16 @@ const BLANK: TemplateInput = { name: "", category: "hr", letter_type: "general_b
 const toInput = (t: LetterTemplate): TemplateInput => ({ name: t.name, category: t.category as TemplateCategory, letter_type: t.letter_type, subject: t.subject, greeting: t.greeting, body: t.body, closing: t.closing });
 
 /** The company's own letter wording: add a template, change it, copy it. Used from "Write a letter" in step 3. */
-export default function Templates({ onChanged, refreshKey }: { onChanged: () => void; refreshKey: number }) {
+export default function Templates({ isAdmin, onChanged, refreshKey }: { isAdmin: boolean; onChanged: () => void; refreshKey: number }) {
+  // Managers and Staff work with customer letters and quotes only; templates for staff letters are Admin only.
+  const kinds = LETTER_TYPES.filter((t) => isAdmin || t.domain === "sales");
+  const BLANK_HERE: TemplateInput = isAdmin ? BLANK : { ...BLANK, category: "sales", letter_type: "sales_letter" };
   const [templates, setTemplates] = useState<LetterTemplate[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [editing, setEditing] = useState<string | "new" | null>(null);
-  const [form, setForm] = useState<TemplateInput>(BLANK);
+  const [form, setForm] = useState<TemplateInput>(isAdmin ? BLANK : { ...BLANK, category: "sales", letter_type: "sales_letter" });
   const [dirty, setDirty] = useState(false);
   const [busy, setBusy] = useState(false);
   const [focus, setFocus] = useState<FieldKey>("body");
@@ -66,11 +69,11 @@ export default function Templates({ onChanged, refreshKey }: { onChanged: () => 
     setMessage(null);
   }
 
-  function startNew(base: TemplateInput = BLANK) {
+  function startNew(base: TemplateInput = BLANK_HERE) {
     if (!leave()) return;
     setEditing("new");
     setForm(base);
-    setDirty(base !== BLANK);
+    setDirty(base !== BLANK_HERE);
     setMessage(null);
   }
 
@@ -177,9 +180,11 @@ export default function Templates({ onChanged, refreshKey }: { onChanged: () => 
           <button className="btn" onClick={() => startNew()}>
             New template
           </button>
-          <button className="btn btn-secondary" onClick={addStarters} disabled={busy}>
-            Add the ready-made wording as templates
-          </button>
+          {isAdmin && (
+            <button className="btn btn-secondary" onClick={addStarters} disabled={busy}>
+              Add the ready-made wording as templates
+            </button>
+          )}
         </div>
         {tableMissing && <p className="error-text">The templates table is not set up yet. Run the letter templates migration in Supabase, then reload.</p>}
         {error && !tableMissing && <p className="error-text">{error}</p>}
@@ -227,7 +232,7 @@ export default function Templates({ onChanged, refreshKey }: { onChanged: () => 
               <div className="field" style={{ margin: 0 }}>
                 <label>Kind of letter</label>
                 <select value={form.letter_type} onChange={(e) => change("letter_type", e.target.value as TemplateInput["letter_type"])}>
-                  {LETTER_TYPES.map((t) => (
+                  {kinds.map((t) => (
                     <option key={t.key} value={t.key}>
                       {t.label}
                     </option>

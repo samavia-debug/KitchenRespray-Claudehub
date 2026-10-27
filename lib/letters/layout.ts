@@ -1,6 +1,7 @@
 import { LETTER_TYPE_BY_KEY } from "./config";
 import { formatLongDate } from "./facts";
 import { parseBlocks, type Block } from "./format";
+import { EMPTY_QUOTE, renderQuote, type Quote, type RenderedQuote } from "./quote";
 import { SIGNER_ID, showSignatureImage } from "./signers";
 import type { LetterDetails, Recipient } from "./prompt";
 
@@ -37,6 +38,8 @@ export type LetterContent = {
   closing: string;
   /** Typed over the address block and the signature on this letter only; the rest of `details` is not used for layout. */
   details?: Pick<LetterDetails, "addressBlock" | "signatureBlock" | "signerId">;
+  /** The lines, totals and terms of a quote. */
+  quote?: Partial<Quote> | null;
 };
 
 export type RenderedLetter = {
@@ -49,6 +52,8 @@ export type RenderedLetter = {
   paragraphs: string[];
   /** The same text as paragraphs, lists and bold or italic runs. */
   blocks: Block[];
+  /** A quote's table, totals and terms, placed after the text; null for any other letter. */
+  quote: RenderedQuote | null;
   closing: string;
   /** Typed signatory block; empty lines leave room for a handwritten signature. */
   signature: string[];
@@ -105,6 +110,7 @@ export function renderLetter(settings: LetterSettings, c: LetterContent, options
     greeting: c.greeting.trim(),
     paragraphs: c.body.replace(/\r\n/g, "\n").split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean),
     blocks: parseBlocks(c.body),
+    quote: c.letter_type === "quote" ? renderQuote({ ...EMPTY_QUOTE, ...(c.quote ?? {}), lines: c.quote?.lines ?? [] }) : null,
     closing: c.closing.trim(),
     signature,
     signerId: c.details?.signerId && SIGNER_ID.test(c.details.signerId) && showSignatureImage(c.status, c.letter_type) ? c.details.signerId : null,

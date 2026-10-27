@@ -5,8 +5,8 @@ import type { Signer } from "@/lib/letters/signers";
 import SignaturePad from "./signature-pad";
 import { prepareSignatureFile } from "./signature-image";
 
-type Form = { name: string; title: string; is_default: boolean; active: boolean };
-const BLANK: Form = { name: "", title: "", is_default: false, active: true };
+type Form = { name: string; title: string; is_default: boolean; active: boolean; for_sales: boolean };
+const BLANK: Form = { name: "", title: "", is_default: false, active: true, for_sales: false };
 
 /** The people who sign letters: a typed name and job title, and a picture of their signature, drawn or from a photo or scan. */
 export default function Signatures({ onChanged, refreshKey }: { onChanged: () => void; refreshKey: number }) {
@@ -44,7 +44,7 @@ export default function Signatures({ onChanged, refreshKey }: { onChanged: () =>
 
   function open(s: Signer) {
     setEditing(s.id);
-    setForm({ name: s.name, title: s.title ?? "", is_default: s.is_default, active: s.active });
+    setForm({ name: s.name, title: s.title ?? "", is_default: s.is_default, active: s.active, for_sales: s.for_sales });
     setPending(undefined);
     setHasImage(s.has_image);
     setDrawing(false);
@@ -142,6 +142,7 @@ export default function Signatures({ onChanged, refreshKey }: { onChanged: () =>
             {!s.active && <span style={{ marginLeft: "0.5rem", fontSize: "0.72rem", color: "var(--muted)" }}>not in use</span>}
             <div style={{ fontSize: "0.75rem", color: "var(--muted)" }}>
               {s.title || "No job title"} · {s.has_image ? "signature picture saved" : "typed name only"}
+              {s.for_sales ? " · sales documents" : ""}
             </div>
           </button>
         ))}
@@ -167,10 +168,19 @@ export default function Signatures({ onChanged, refreshKey }: { onChanged: () =>
               <input type="checkbox" checked={form.is_default} onChange={(e) => setForm({ ...form, is_default: e.target.checked })} />
               The usual signer (chosen for new letters)
             </label>
-            <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.75rem", fontSize: "0.9rem" }}>
+            <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", margin: "0 0 0.25rem", fontSize: "0.9rem" }}>
               <input type="checkbox" checked={form.active} onChange={(e) => setForm({ ...form, active: e.target.checked })} />
               Can be chosen for letters
             </label>
+            <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.75rem", fontSize: "0.9rem" }}>
+              <input type="checkbox" checked={form.for_sales} onChange={(e) => setForm({ ...form, for_sales: e.target.checked })} />
+              Managers and Staff can use them on customer letters and quotes
+            </label>
+            {form.for_sales && (
+              <p style={{ margin: "-0.4rem 0 0.75rem", fontSize: "0.78rem", color: "#7a4a00" }}>
+                This lets Managers and Staff put this person&apos;s signature picture on customer letters and quotes they finalise. Leave it off for anyone who has not agreed to that.
+              </p>
+            )}
 
             <h3 style={{ marginBottom: "0.25rem" }}>Signature picture</h3>
             <p style={{ margin: "0 0 0.5rem", fontSize: "0.8rem", color: "var(--muted)" }}>

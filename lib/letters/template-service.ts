@@ -10,6 +10,12 @@ export async function listTemplates(): Promise<LetterTemplate[]> {
   return (data || []) as LetterTemplate[];
 }
 
+export async function getTemplate(id: string): Promise<LetterTemplate | null> {
+  const { data, error } = await createServiceClient().from("letter_templates").select(COLUMNS).eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
+  return (data as LetterTemplate | null) ?? null;
+}
+
 export async function createTemplate(input: TemplateInput, userId: string): Promise<string> {
   const { data, error } = await createServiceClient().from("letter_templates").insert({ ...input, created_by: userId, updated_by: userId }).select("id").single();
   if (error) throw new Error(error.message);

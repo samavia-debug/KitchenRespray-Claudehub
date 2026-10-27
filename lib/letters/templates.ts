@@ -16,6 +16,11 @@ export type TemplateCategory = (typeof TEMPLATE_CATEGORIES)[number]["key"];
 
 export const TEMPLATE_CATEGORY_LABEL: Record<string, string> = Object.fromEntries(TEMPLATE_CATEGORIES.map((c) => [c.key, c.label]));
 
+/** The category a template of this kind starts in; it can be changed. */
+export function categoryForType(type: string): TemplateCategory {
+  return type === "quote" ? "quote" : type === "sales_letter" ? "sales" : type === "general_business" || type === "custom" ? "general" : "hr";
+}
+
 export type TemplateInput = {
   name: string;
   category: TemplateCategory;
@@ -122,7 +127,7 @@ export function starterTemplates(): TemplateInput[] {
     );
     return {
       name: `${t.label} (starter)`,
-      category: t.key === "general_business" || t.key === "custom" ? "general" : "hr",
+      category: categoryForType(t.key),
       letter_type: t.key,
       subject: stock.subject,
       greeting: "",

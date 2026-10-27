@@ -90,6 +90,67 @@ export default function LetterPreview({ settings, content }: { settings: LetterS
           )
         )}
 
+        {l.quote && (
+          <div style={{ margin: "0 0 0.9em", fontSize: "0.92em" }}>
+            <p style={{ margin: "0 0 0.2em", fontWeight: 700 }}>{l.quote.numberText}</p>
+            {l.quote.validText && <p style={{ margin: "0 0 0.5em" }}>{l.quote.validText}</p>}
+            <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+              <colgroup>
+                <col style={{ width: "46%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "16%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "20%" }} />
+              </colgroup>
+              <thead>
+                <tr style={{ background: "#f0ede8" }}>
+                  {["Description", "Qty", "Unit price", "VAT", "Total"].map((h, i) => (
+                    <th key={h} style={{ border: "1px solid #bfbfbf", padding: "0.25em 0.4em", textAlign: i === 0 ? "left" : "right" }}>
+                      {h}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {l.quote.rows.length === 0 && (
+                  <tr>
+                    <td colSpan={5} style={{ border: "1px solid #bfbfbf", padding: "0.4em", color: "#999" }}>
+                      The quote lines will appear here.
+                    </td>
+                  </tr>
+                )}
+                {l.quote.rows.map((r, i) => (
+                  <tr key={i}>
+                    {[r.description, r.qty, r.unit, r.vat, r.total].map((t, j) => (
+                      <td key={j} style={{ border: "1px solid #bfbfbf", padding: "0.25em 0.4em", textAlign: j === 0 ? "left" : "right", verticalAlign: "top" }}>
+                        {t}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            <div style={{ textAlign: "right", marginTop: "0.5em", lineHeight: 1.5 }}>
+              <div>Subtotal&nbsp;&nbsp;{l.quote.subtotal}</div>
+              {l.quote.vatRows.map((v) => (
+                <div key={v.label}>
+                  {v.label}&nbsp;&nbsp;{v.amount}
+                </div>
+              ))}
+              <div style={{ fontWeight: 700 }}>Total&nbsp;&nbsp;{l.quote.total}</div>
+            </div>
+            {l.quote.terms.length > 0 && (
+              <div style={{ marginTop: "0.8em", fontSize: "0.95em" }}>
+                {l.quote.terms.map((t, i) => (
+                  <p key={i} style={{ margin: "0 0 0.3em" }}>
+                    {t}
+                  </p>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
         {l.closing && <p style={{ ...text, marginBottom: 0 }}>{l.closing}</p>}
         <div style={{ marginTop: "0.4em" }}>
           {/* The signature picture takes the place of the two blank lines to sign in. It is only here once the letter may show one; a removed picture just leaves the space. */}

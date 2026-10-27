@@ -3,22 +3,27 @@ import { logEvent, type SaveResult } from "./service";
 import type { ParsedImage, Signer, SignerInput } from "./signers";
 
 // The list never carries the picture: `has_image` says whether there is one, and the picture is fetched by its own call.
-const LIST_COLUMNS = "id, name, title, is_default, active, image_type";
+const LIST_COLUMNS = "id, name, title, is_default, active, image_type, for_sales";
 
-const asSigner = (r: any): Signer => ({ id: r.id, name: r.name, title: r.title, is_default: r.is_default, active: r.active, has_image: !!r.image_type });
+const asSigner = (r: any): Signer => ({ id: r.id, name: r.name, title: r.title, is_default: r.is_default, active: r.active, has_image: !!r.image_type, for_sales: r.for_sales });
 
-export async function listSigners(): Promise<Signer[]> {
-  const { data, error } = await createServiceClient().from("letter_signers").select(LIST_COLUMNS).order("is_default", { ascending: false }).order("name").limit(200);
+/** `forSalesOnly`: for a Manager or Staff member, who can use only the signers marked for sales documents. */
+export async function listSigners(forSalesOnly = false): Promise<Signer[]> {
+  let q = createServiceClient().from("letter_signers").select(LIST_COLUMNS).order("is_default", { ascending: false }).order("name").limit(200);
+  if (forSalesOnly) q = q.eq("for_sales", true).eq("active", true);
+  const { data, error } = await q;
   if (error) throw new Error(error.message);
   return (data || []).map(asSigner);
 }
 
 export type StoredImage = { data: Buffer; type: "png" | "jpeg"; width: number; height: number };
 
-export async function getSignerImage(id: string): Promise<StoredImage | null> {
-  const { data, error } = await createServiceClient().from("letter_signers").select("image_base64, image_type, image_width, image_height").eq("id", id).maybeSingle();
+export async function getSignerImage(id: string, forSalesOnly = false): Promise<StoredImage | null> {
+  const { data, error } = await createServiceClient().from("letter_signers").select("image_base64, image_type, image_width, image_height, for_sales").eq("id", id).maybeSingle();
   if (error) throw new Error(error.message);
   if (!data?.image_base64 || !data.image_type) return null;
+  // A signature that is not marked for sales documents is never handed to a Manager or Staff member.
+  if (forSalesOnly && !data.for_sales) return null;
   return { data: Buffer.from(data.image_base64, "base64"), type: data.image_type, width: data.image_width ?? 0, height: data.image_height ?? 0 };
 }
 

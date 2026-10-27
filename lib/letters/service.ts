@@ -2,7 +2,9 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { askClaude, CLAUDE_MODEL } from "@/lib/ai/anthropic";
 import { CONNECTEAM_SOURCE, parseStaffContent } from "@/lib/connecteam/mapping";
 import { dublinDateKey } from "@/lib/connecteam/time-clock-summary";
+import type { Role } from "@/lib/auth/session";
 import { FACT_LABEL, LETTER_TYPE_BY_KEY, type FactKey, type LetterStatus, type LetterTypeKey } from "./config";
+import type { Quote } from "./quote";
 import { cleanStaffName } from "./names";
 import { fetchStaffAddress } from "./staff-address";
 import { applyAdded, factsForModel, factsFromStaff, formatLongDate, missingFacts, type LetterFacts } from "./facts";
@@ -13,7 +15,7 @@ import { nextStatus, type LetterInput, type StatusAction } from "./validate";
 export const todayIso = () => dublinDateKey(Date.now());
 
 const LIST_COLUMNS = "id, technician_name, technician_former, letter_type, status, subject, letter_date, ai_generated, updated_at, approved_at, finalised_at";
-const FULL_COLUMNS = `${LIST_COLUMNS}, technician_user_id, recipient, facts, details, greeting, body, closing, missing, created_at, approved_by, finalised_by, created_by`;
+const FULL_COLUMNS = `${LIST_COLUMNS}, technician_user_id, recipient, facts, details, greeting, body, closing, missing, created_at, approved_by, finalised_by, created_by, quote`;
 
 // ---- Technicians (read from the existing Connecteam staff entries; nothing is copied) ----
 
@@ -105,10 +107,14 @@ export type LetterRow = {
   approved_by: string | null;
   finalised_by: string | null;
   created_by: string | null;
+  quote: Quote;
 };
 
-export async function listLetters(): Promise<Partial<LetterRow>[]> {
-  const { data, error } = await createServiceClient().from("letters").select(LIST_COLUMNS).order("updated_at", { ascending: false }).limit(300);
+/** `types` limits the list to those kinds of letter, for a role that may not see them all. */
+export async function listLetters(types?: string[]): Promise<Partial<LetterRow>[]> {
+  let q = createServiceClient().from("letters").select(LIST_COLUMNS).order("updated_at", { ascending: false }).limit(300);
+  if (types) q = q.in("letter_type", types);
+  const { data, error } = await q;
   if (error) throw new Error(error.message);
   return data || [];
 }
@@ -119,14 +125,34 @@ export async function getLetter(id: string): Promise<LetterRow | null> {
   return (data as LetterRow | null) ?? null;
 }
 
+/** The next quote number, "Q1001" and on: one sequence for the whole company, so no two quotes share a number. */
+async function nextQuoteNumber(): Promise<string> {
+  const { data, error } = await createServiceClient().rpc("next_quote_number");
+  if (error) throw new Error(`Could not give the quote a number (has the quotes migration been run?): ${error.message}`);
+  return `Q${data}`;
+}
+
+/**
+ * A role that may not see every signer can use only those marked for sales documents: anyone else is dropped from the letter, which
+ * keeps its typed name but never shows their signature picture.
+ */
+export async function limitSigner(input: LetterInput, role: Role | undefined): Promise<LetterInput> {
+  if (role === "Admin" || !input.details.signerId) return input;
+  const { data } = await createServiceClient().from("letter_signers").select("for_sales").eq("id", input.details.signerId).maybeSingle();
+  if (data?.for_sales) return input;
+  const { signerId, ...details } = input.details;
+  return { ...input, details };
+}
+
 export async function createLetter(input: LetterInput, userId: string): Promise<string> {
+  const quote = input.letter_type === "quote" ? { ...input.quote, number: await nextQuoteNumber() } : input.quote;
   const { data, error } = await createServiceClient()
     .from("letters")
-    .insert({ ...input, status: "draft", created_by: userId })
+    .insert({ ...input, quote, status: "draft", created_by: userId })
     .select("id")
     .single();
   if (error) throw new Error(error.message);
-  await logEvent(data.id, userId, "created", { letter_type: input.letter_type, ai_generated: input.ai_generated });
+  await logEvent(data.id, userId, "created", { letter_type: input.letter_type, ai_generated: input.ai_generated, ...(quote.number ? { quote_number: quote.number } : {}) });
   return data.id;
 }
 
@@ -136,7 +162,9 @@ export async function updateLetter(id: string, input: LetterInput, userId: strin
   const current = await getLetter(id);
   if (!current) return { ok: false, error: "Letter not found", status: 404 };
   if (current.status !== "draft") return { ok: false, error: "Only a draft can be edited. Reopen it first.", status: 409 };
-  const { error } = await createServiceClient().from("letters").update({ ...input, updated_at: new Date().toISOString() }).eq("id", id);
+  // The number is the quote's own and is never changed from the page.
+  const quote = input.letter_type === "quote" ? { ...input.quote, number: current.quote?.number ?? "" } : input.quote;
+  const { error } = await createServiceClient().from("letters").update({ ...input, quote, updated_at: new Date().toISOString() }).eq("id", id);
   if (error) return { ok: false, error: error.message, status: 500 };
   await logEvent(id, userId, "saved");
   return { ok: true };
@@ -182,6 +210,8 @@ export async function duplicateLetter(id: string, userId: string): Promise<strin
       closing: src.closing,
       missing: src.missing,
       ai_generated: src.ai_generated,
+      // A copy of a quote is a new quote with its own number.
+      quote: src.letter_type === "quote" ? { ...src.quote, number: await nextQuoteNumber() } : src.quote ?? {},
       created_by: userId,
     })
     .select("id")

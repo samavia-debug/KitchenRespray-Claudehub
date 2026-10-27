@@ -1,17 +1,19 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/session";
+import { lettersAccess } from "@/lib/letters/route-auth";
 import { createSigner, listSigners } from "@/lib/letters/signer-service";
 import { cleanSignerInput, parseImageDataUrl, type ParsedImage } from "@/lib/letters/signers";
 
 export const maxDuration = 30;
 
-// A signature picture can be misused, so signers are managed by Admins only, like the letters themselves.
+// A signature picture can be misused, so signers are managed by Admins only. Managers and Staff, who write customer letters and quotes,
+// can see only the signers an Admin has marked for sales documents.
 export async function GET() {
-  const auth = await requireRole(["Admin"]);
+  const auth = await lettersAccess();
   if ("error" in auth) return auth.error;
 
   try {
-    return NextResponse.json({ signers: await listSigners() });
+    return NextResponse.json({ signers: await listSigners(auth.role !== "Admin") });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Could not load the signers" }, { status: 500 });
   }

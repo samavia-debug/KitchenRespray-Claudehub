@@ -122,6 +122,23 @@ export const STOCK: Record<LetterTypeKey, TypeStock> = {
     subject: "",
     paragraphs: [{ id: "text", label: "Your own wording", text: "{purposeText}", auto: "always" }],
   },
+  // Customer documents: written from the form only; no staff record is involved, so only {company}, {recipientName}, {purpose} and {reference} apply.
+  sales_letter: {
+    subject: "",
+    paragraphs: [
+      { id: "intro", label: "Says what the letter is about", text: "Thank you for contacting {company}. I am writing about {purpose}.", auto: "always" },
+      { id: "visit", label: "Offer a visit to measure up", text: "We would be glad to visit to look at the work and measure up, at a time that suits you.", auto: "never" },
+      { id: "thanks-visit", label: "Thank them for a visit", text: "Thank you for taking the time to meet us and show us the work.", auto: "never" },
+      { id: "questions", label: "Offer to answer questions", text: "If you have any questions, please get in touch and we will be happy to help.", auto: "always" },
+    ],
+  },
+  quote: {
+    subject: "Quote: {purpose}",
+    paragraphs: [
+      { id: "intro", label: "Thanks them and introduces the quote", text: "Thank you for the opportunity to quote for {purpose}. Our quote is set out below.", auto: "always" },
+      { id: "questions", label: "Offer to answer questions", text: "If you have any questions about the quote, please get in touch.", auto: "never" },
+    ],
+  },
 };
 
 /** The addressee block for a letter to the person themselves: name, home address (one line each) and contact details. */

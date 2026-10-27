@@ -114,8 +114,10 @@ describe("staff names", () => {
 });
 
 describe("letter types", () => {
-  it("has the eight suggested types, with warnings and references marked sensitive", () => {
-    expect(LETTER_TYPES).toHaveLength(8);
+  it("has the eight staff letter types and two customer ones, with warnings and references marked sensitive", () => {
+    expect(LETTER_TYPES.filter((t) => t.domain === "hr")).toHaveLength(8);
+    expect(LETTER_TYPES.filter((t) => t.domain === "sales").map((t) => t.key)).toEqual(["sales_letter", "quote"]);
+    expect(LETTER_TYPES).toHaveLength(10);
     const sensitive = LETTER_TYPES.filter((t) => t.sensitive).map((t) => t.key).sort();
     expect(sensitive).toEqual(["employment_reference", "warning"]);
   });

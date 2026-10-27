@@ -29,6 +29,52 @@ function paragraph(runs: Run[], opts: { after?: number; align?: "left" | "center
   return `<w:p>${ppr}${rs}</w:p>`;
 }
 
+const cell = (width: number, runs: string, align: "left" | "right", shade?: string) =>
+  `<w:tc><w:tcPr><w:tcW w:w="${width}" w:type="dxa"/>${shade ? `<w:shd w:val="clear" w:color="auto" w:fill="${shade}"/>` : ""}<w:tcMar><w:top w:w="60" w:type="dxa"/><w:bottom w:w="60" w:type="dxa"/></w:tcMar></w:tcPr>` +
+  `<w:p><w:pPr><w:spacing w:after="0"/><w:jc w:val="${align}"/></w:pPr>${runs}</w:p></w:tc>`;
+
+const QUOTE_COLUMNS = [4338, 800, 1500, 900, 1800]; // description, quantity, unit price, VAT, total: 9338 twips, inside the margins
+
+/** A quote as the Word file shows it: a table of lines, the totals, and the terms. */
+function quoteXml(q: NonNullable<RenderedLetter["quote"]>): string[] {
+  const out: string[] = [];
+  const small = { size: 20 };
+  const run = (text: string, bold = false) => runsXml([{ text, bold }]).replace('<w:sz w:val="22"/>', '<w:sz w:val="20"/>');
+
+  out.push(paragraph([{ text: q.numberText, bold: true, ...small }], { after: q.validText ? 0 : 120 }));
+  if (q.validText) out.push(paragraph([{ text: q.validText, ...small }], { after: 120 }));
+
+  const border = (n: string) => `<w:${n} w:val="single" w:sz="4" w:space="0" w:color="BFBFBF"/>`;
+  const row = (cells: string[], header = false) =>
+    `<w:tr>${header ? "<w:trPr><w:tblHeader/></w:trPr>" : ""}${cells.join("")}</w:tr>`;
+  const rows: string[] = [
+    row(
+      ["Description", "Qty", "Unit price", "VAT", "Total"].map((h, i) => cell(QUOTE_COLUMNS[i], run(h, true), i === 0 ? "left" : "right", "F0EDE8")),
+      true
+    ),
+    ...q.rows.map((r) => row([r.description, r.qty, r.unit, r.vat, r.total].map((t, i) => cell(QUOTE_COLUMNS[i], run(t), i === 0 ? "left" : "right")))),
+  ];
+  out.push(
+    `<w:tbl><w:tblPr><w:tblW w:w="${QUOTE_COLUMNS.reduce((a, b) => a + b, 0)}" w:type="dxa"/><w:tblBorders>${["top", "left", "bottom", "right", "insideH", "insideV"].map(border).join("")}</w:tblBorders><w:tblLayout w:type="fixed"/></w:tblPr>` +
+      `<w:tblGrid>${QUOTE_COLUMNS.map((w) => `<w:gridCol w:w="${w}"/>`).join("")}</w:tblGrid>${rows.join("")}</w:tbl>`
+  );
+
+  // The totals, right-aligned under the table.
+  const total = (label: string, amount: string, bold = false) =>
+    out.push(`<w:p><w:pPr><w:spacing w:before="0" w:after="40"/><w:jc w:val="right"/></w:pPr>${runsXml([{ text: `${label}  `, bold }])}${runsXml([{ text: amount, bold }])}</w:p>`);
+  out.push(paragraph([{ text: "" }], { after: 0 }));
+  total("Subtotal", q.subtotal);
+  q.vatRows.forEach((v) => total(v.label, v.amount));
+  total("Total", q.total, true);
+
+  if (q.terms.length > 0) {
+    out.push(paragraph([{ text: "" }], { after: 60 }));
+    q.terms.forEach((t) => out.push(paragraph([{ text: t, size: 20 }], { after: 60 })));
+  }
+  out.push(paragraph([{ text: "" }], { after: 120 }));
+  return out;
+}
+
 /** Runs of the letter's text in the body font, with bold and italic where the text has them. */
 function runsXml(runs: { text: string; bold?: boolean; italic?: boolean }[]): string {
   return runs
@@ -124,6 +170,7 @@ export function buildDocx(l: RenderedLetter, now: Date = new Date(), artwork?: U
       );
     });
   });
+  if (l.quote) body.push(...quoteXml(l.quote));
   if (l.closing) body.push(paragraph([{ text: l.closing }], { after: 120 }));
   if (signature) {
     // The picture takes the place of the two blank lines left to sign in.

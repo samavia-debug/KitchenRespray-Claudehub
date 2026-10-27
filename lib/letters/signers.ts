@@ -11,6 +11,8 @@ export type Signer = {
   has_image: boolean;
   is_default: boolean;
   active: boolean;
+  /** Managers and Staff may use this signer, and their picture, on customer letters and quotes. */
+  for_sales: boolean;
 };
 
 export type SignerInput = {
@@ -18,6 +20,7 @@ export type SignerInput = {
   title: string | null;
   is_default: boolean;
   active: boolean;
+  for_sales: boolean;
 };
 
 export const MAX_SIGNATURE_BYTES = 300_000;
@@ -86,7 +89,7 @@ export function cleanSignerInput(raw: unknown): { value: SignerInput } | { error
   const b = raw as Record<string, unknown>;
   const name = text(b.name, 120);
   if (!name) return { error: "Enter the signer's name" };
-  return { value: { name, title: text(b.title, 120), is_default: b.is_default === true, active: b.active !== false } };
+  return { value: { name, title: text(b.title, 120), is_default: b.is_default === true, active: b.active !== false, for_sales: b.for_sales === true } };
 }
 
 /** The typed words under a signature: the name, then the job title. */

@@ -97,7 +97,7 @@ export default function SavedLetters({ onOpen, refreshKey }: { onOpen: (id: stri
           <table className="data-table">
             <thead>
               <tr>
-                <th>Technician</th>
+                <th>For</th>
                 <th>Letter</th>
                 <th>Date</th>
                 <th>Status</th>

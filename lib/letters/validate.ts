@@ -1,6 +1,8 @@
 import { validIsoDate } from "../compliance/extract";
 import { FACT_LABEL, LETTER_TYPE_BY_KEY, type FactKey, type LetterStatus } from "./config";
 import type { LetterFacts } from "./facts";
+import { domainOf } from "./access";
+import { EMPTY_QUOTE, cleanQuote, type Quote } from "./quote";
 import { SIGNER_ID } from "./signers";
 import { DRAFT_LIMITS, unresolvedPlaceholders, type LetterDetails, type Recipient } from "./prompt";
 
@@ -59,6 +61,8 @@ export type LetterInput = {
   closing: string;
   missing: string[];
   ai_generated: boolean;
+  /** Lines, totals basis and terms; only a quote has one. */
+  quote: Quote;
 };
 
 /** Checks what the page sends when saving a letter. Statuses are changed only through `nextStatus`, never here. */
@@ -69,11 +73,27 @@ export function cleanLetterInput(raw: unknown): { value: LetterInput } | { error
   const type = typeof b.letter_type === "string" ? b.letter_type : "";
   if (!LETTER_TYPE_BY_KEY[type]) return { error: "Choose a letter type" };
 
-  const name = oneLine(b.technician_name, 160);
-  if (!name) return { error: "Choose a technician" };
+  const sales = domainOf(type) === "sales";
+  const recipient = cleanRecipient(b.recipient);
 
-  const id = b.technician_user_id === null || b.technician_user_id === undefined ? null : Number(b.technician_user_id);
+  // A letter about a member of staff names them. A customer letter or quote has no staff member: it is kept under the customer's name.
+  let name = oneLine(b.technician_name, 160);
+  if (sales) {
+    if (!recipient.name && !recipient.organisation) return { error: "Enter who the letter is for" };
+    name = recipient.name || recipient.organisation || "";
+  } else if (!name) {
+    return { error: "Choose a technician" };
+  }
+
+  const id = sales || b.technician_user_id === null || b.technician_user_id === undefined ? null : Number(b.technician_user_id);
   if (id !== null && !Number.isSafeInteger(id)) return { error: "Invalid technician" };
+
+  let quote: Quote = EMPTY_QUOTE;
+  if (type === "quote") {
+    const q = cleanQuote(b.quote);
+    if ("error" in q) return q;
+    quote = q.value;
+  }
 
   const letterDate = validIsoDate(b.letter_date);
   if (!letterDate) return { error: "Enter a valid letter date" };
@@ -86,11 +106,11 @@ export function cleanLetterInput(raw: unknown): { value: LetterInput } | { error
     value: {
       technician_user_id: id,
       technician_name: name,
-      technician_former: b.technician_former === true,
+      technician_former: !sales && b.technician_former === true,
       letter_type: type,
       subject: oneLine(b.subject, DRAFT_LIMITS.subject),
       letter_date: letterDate,
-      recipient: cleanRecipient(b.recipient),
+      recipient,
       facts: cleanFacts(b.facts, name),
       details: cleanDetails(b.details),
       greeting: oneLine(b.greeting, DRAFT_LIMITS.greeting),
@@ -98,6 +118,7 @@ export function cleanLetterInput(raw: unknown): { value: LetterInput } | { error
       closing: oneLine(b.closing, DRAFT_LIMITS.closing),
       missing,
       ai_generated: b.ai_generated === true,
+      quote,
     },
   };
 }
@@ -128,11 +149,14 @@ export type Transition = { ok: true; status: LetterStatus } | { ok: false; error
  * approved automatically, a letter with unconfirmed [CONFIRM: ...] placeholders
  * cannot be finalised, and reopening an approved letter withdraws the approval.
  */
-export function nextStatus(current: LetterStatus, action: StatusAction, letter: { subject: string; body: string }): Transition {
+export function nextStatus(current: LetterStatus, action: StatusAction, letter: { subject: string; body: string; letter_type?: string; quote?: Quote | null }): Transition {
   if (action === "finalise") {
     if (current !== "draft") return { ok: false, error: "Only a draft can be finalised" };
     if (!letter.subject.trim()) return { ok: false, error: "Add a subject before finalising" };
-    if (!letter.body.trim()) return { ok: false, error: "The letter has no text yet" };
+    // A quote can be all lines, with no note above them; it must have lines.
+    if (letter.letter_type === "quote") {
+      if (!letter.quote || letter.quote.lines.length === 0) return { ok: false, error: "Add at least one line to the quote before finalising" };
+    } else if (!letter.body.trim()) return { ok: false, error: "The letter has no text yet" };
     const open = unresolvedPlaceholders(letter.body);
     if (open.length > 0) return { ok: false, error: `Fill in or remove the [CONFIRM: ...] items first: ${open.slice(0, 3).join("; ")}` };
     return { ok: true, status: "finalised" };

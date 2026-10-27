@@ -8,10 +8,12 @@ import { EMPTY_SETTINGS, recipientLinesOf, signatureLinesOf, type LetterSettings
 import { refreshLetter } from "@/lib/letters/refresh";
 import { unresolvedPlaceholders, type LetterDetails, type Recipient } from "@/lib/letters/prompt";
 import { buildFromStock, fillStock, staffAsRecipient, stockFor, type StockContext } from "@/lib/letters/stock";
-import { TEMPLATE_CATEGORY_LABEL, buildFromTemplate, generaliseLetterText, type LetterTemplate } from "@/lib/letters/templates";
+import { TEMPLATE_CATEGORY_LABEL, buildFromTemplate, categoryForType, generaliseLetterText, type LetterTemplate } from "@/lib/letters/templates";
 import type { LetterRow, TechnicianListItem } from "@/lib/letters/service";
 import { showSignatureImage, signerLines, type Signer } from "@/lib/letters/signers";
+import { EMPTY_QUOTE, type Quote } from "@/lib/letters/quote";
 import LetterPreview from "./letter-preview";
+import QuoteEditor, { newQuote } from "./quote-editor";
 
 const todayIso = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Europe/Dublin", year: "numeric", month: "2-digit", day: "2-digit" }).format(new Date());
 
@@ -24,7 +26,13 @@ const STATUS_COLOR: Record<LetterStatus, string> = { draft: "#6f6a63", finalised
 
 type Notice = { kind: "ok" | "error"; text: string } | null;
 
+/** What is being written: a letter about a member of staff (Admins only), a letter to a customer, or a quote. */
+type Mode = "staff" | "customer" | "quote";
+const modeOf = (type: string): Mode => (type === "quote" ? "quote" : type === "sales_letter" ? "customer" : "staff");
+const typeOf = (mode: Mode): LetterTypeKey | "" => (mode === "quote" ? "quote" : mode === "customer" ? "sales_letter" : "");
+
 export default function Writer({
+  isAdmin,
   openId,
   settingsKey,
   templatesKey,
@@ -32,6 +40,8 @@ export default function Writer({
   onSaved,
   onTemplatesChanged,
 }: {
+  /** Only Admins write letters about staff; everyone else writes customer letters and quotes. */
+  isAdmin: boolean;
   openId: string | null;
   settingsKey: number;
   templatesKey: number;
@@ -54,7 +64,10 @@ export default function Writer({
   const [facts, setFacts] = useState<LetterFacts | null>(null);
   const [added, setAdded] = useState<Partial<Record<FactKey, string>>>({});
   const [nameOverride, setNameOverride] = useState<string | null>(null);
-  const [type, setType] = useState<LetterTypeKey | "">("");
+  const startMode: Mode = isAdmin ? "staff" : "customer";
+  const [mode, setMode] = useState<Mode>(startMode);
+  const [type, setType] = useState<LetterTypeKey | "">(typeOf(startMode));
+  const [quote, setQuote] = useState<Quote>(() => newQuote(todayIso()));
   const [recipient, setRecipient] = useState<Recipient>({});
   const [date, setDate] = useState(todayIso());
   const [details, setDetails] = useState<LetterDetails>({});
@@ -75,6 +88,7 @@ export default function Writer({
   // ---- Loading ----
 
   useEffect(() => {
+    if (!isAdmin) return;
     fetch("/api/letters/technicians")
       .then(async (res) => {
         const body = await res.json();
@@ -82,7 +96,7 @@ export default function Writer({
         else setTechs(body.technicians);
       })
       .catch((e) => setTechError(e.message || "Network error"));
-  }, []);
+  }, [isAdmin]);
 
   // The letterhead is read again whenever it is saved on the Letterhead tab.
   useEffect(() => {
@@ -105,7 +119,9 @@ export default function Writer({
       .catch(() => undefined);
   }, [signersKey]);
 
-  const reset = useCallback(() => {
+  const reset = useCallback((next: Mode = startMode) => {
+    setMode(next);
+    setQuote(newQuote(todayIso()));
     setTemplateId("");
     setFilledWith(null);
     setSearch("");
@@ -113,7 +129,7 @@ export default function Writer({
     setFacts(null);
     setAdded({});
     setNameOverride(null);
-    setType("");
+    setType(typeOf(next));
     setRecipient({});
     setDate(todayIso());
     setDetails({});
@@ -124,7 +140,7 @@ export default function Writer({
     setStatus("draft");
     setDirty(false);
     setNotice(null);
-  }, []);
+  }, [startMode]);
 
   const openLetter = useCallback(async (id: string) => {
     setBusy("load");
@@ -140,6 +156,8 @@ export default function Writer({
         setFacts(l.facts);
         setAdded({});
         setType(l.letter_type);
+        setMode(modeOf(l.letter_type));
+        setQuote({ ...EMPTY_QUOTE, ...(l.quote ?? {}), lines: l.quote?.lines ?? [] });
         setRecipient(l.recipient || {});
         setDate(l.letter_date);
         // A typed address block or signature that was cleared is stored as empty, which means "use the details".
@@ -210,11 +228,13 @@ export default function Writer({
   // ---- Derived ----
 
   const effective = useMemo(() => {
+    // A customer letter or quote has no staff record: the "facts" are just the customer's name, so {name} in its wording means them.
+    if (mode !== "staff") return { name: (recipient.name ?? "").replace(/s+/g, " ").trim(), former: false, values: {}, sources: {} } as LetterFacts;
     if (!facts) return null;
     const withAdded = applyAdded(facts, added);
     // The name on the letter can be corrected without touching the staff record.
     return { ...withAdded, name: (nameOverride ?? withAdded.name).replace(/\s+/g, " ").trim() || withAdded.name };
-  }, [facts, added, nameOverride]);
+  }, [mode, recipient.name, facts, added, nameOverride]);
   const missingNow = useMemo(() => (type && effective ? missingFacts(type, effective) : []), [type, effective]);
   const matches = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -254,7 +274,7 @@ export default function Writer({
 
   function payload() {
     return {
-      technician_user_id: techId,
+      technician_user_id: mode === "staff" ? techId : null,
       technician_name: effective?.name ?? "",
       technician_former: effective?.former ?? false,
       letter_type: type,
@@ -268,6 +288,7 @@ export default function Writer({
       closing: draft?.closing ?? "",
       missing,
       ai_generated: aiGenerated,
+      quote: type === "quote" ? quote : undefined,
     };
   }
 
@@ -391,7 +412,7 @@ export default function Writer({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name,
-          category: type === "general_business" || type === "custom" ? "general" : "hr",
+          category: categoryForType(type),
           letter_type: type,
           subject: g(draft.subject),
           greeting: "",
@@ -421,7 +442,7 @@ export default function Writer({
 
   /** Saves the current letter as a draft; returns its id, or null if it could not be saved. */
   async function save(): Promise<string | null> {
-    if (!draft || !type || !techId) return null;
+    if (!draft || !type || (mode === "staff" && !techId)) return null;
     setBusy("save");
     setNotice(null);
     try {
@@ -505,7 +526,14 @@ export default function Writer({
 
   function startNew() {
     if (dirty && !window.confirm("Start a new letter? Changes you have not saved will be lost.")) return;
-    reset();
+    reset(mode);
+  }
+
+  /** Switches between a letter about staff, a letter to a customer and a quote, each starting afresh. */
+  function chooseMode(next: Mode) {
+    if (next === mode) return;
+    if (dirty && !window.confirm("Start something new? Changes you have not saved will be lost.")) return;
+    reset(next);
   }
 
   const tableMissing = !!techError && /does not exist|could not find the table|schema cache/i.test(techError);
@@ -519,6 +547,7 @@ export default function Writer({
     greeting: draft?.greeting ?? "",
     body: draft?.body ?? "",
     closing: draft?.closing ?? "",
+    quote: type === "quote" ? quote : null,
     details: { addressBlock: details.addressBlock, signatureBlock: details.signatureBlock, signerId: details.signerId },
   };
 
@@ -544,7 +573,27 @@ export default function Writer({
         </div>
       )}
 
+      {/* What is being written */}
+      <div className="card no-print" style={{ marginBottom: "1.25rem" }}>
+        <h2 style={{ marginTop: 0 }}>What are you writing?</h2>
+        <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+          {(
+            [
+              ...(isAdmin ? [["staff", "A letter about a staff member"] as [Mode, string]] : []),
+              ["customer", "A letter to a customer"] as [Mode, string],
+              ["quote", "A quote"] as [Mode, string],
+            ] as [Mode, string][]
+          ).map(([m, label]) => (
+            <button key={m} type="button" className={mode === m ? "btn" : "btn btn-secondary"} onClick={() => chooseMode(m)} aria-pressed={mode === m}>
+              {label}
+            </button>
+          ))}
+        </div>
+        {mode !== "staff" && <p style={{ margin: "0.6rem 0 0", fontSize: "0.85rem", color: "var(--muted)" }}>{LETTER_TYPE_BY_KEY[typeOf(mode) || "sales_letter"].description}</p>}
+      </div>
+
       {/* Step 1 */}
+      {mode === "staff" && (
       <div className="card no-print" style={{ marginBottom: "1.25rem" }}>
         <h2 style={{ marginTop: 0 }}>1. Technician</h2>
         {techError && <p className="error-text">{tableMissing ? "Staff records are not available yet." : techError}</p>}
@@ -658,30 +707,35 @@ export default function Writer({
           </div>
         )}
       </div>
+      )}
 
       {/* Steps 2 and 3 */}
       <div className="card no-print" style={{ marginBottom: "1.25rem" }}>
-        <h2 style={{ marginTop: 0 }}>2. Letter type</h2>
-        <div className="field" style={{ maxWidth: 420 }}>
-          <select value={type} disabled={locked} onChange={(e) => chooseType(e.target.value as LetterTypeKey | "")} aria-label="Letter type">
-            <option value="">Choose a letter type...</option>
-            {LETTER_TYPES.map((t) => (
-              <option key={t.key} value={t.key}>
-                {t.label}
-                {t.sensitive ? " (needs approval)" : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-        {config && <p style={{ margin: "0 0 0.5rem", color: "var(--muted)", fontSize: "0.9rem" }}>{config.description}</p>}
+        {mode === "staff" && (
+          <>
+            <h2 style={{ marginTop: 0 }}>2. Letter type</h2>
+            <div className="field" style={{ maxWidth: 420 }}>
+              <select value={type} disabled={locked} onChange={(e) => chooseType(e.target.value as LetterTypeKey | "")} aria-label="Letter type">
+                <option value="">Choose a letter type...</option>
+                {LETTER_TYPES.filter((t) => t.domain === "hr").map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.label}
+                    {t.sensitive ? " (needs approval)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+            {config && <p style={{ margin: "0 0 0.5rem", color: "var(--muted)", fontSize: "0.9rem" }}>{config.description}</p>}
+          </>
+        )}
         {config?.sensitive && (
           <p style={{ margin: "0 0 0.5rem", padding: "0.6rem 0.8rem", background: "var(--accent-soft)", borderRadius: 6, fontSize: "0.85rem", color: "#7a4a00" }}>{SENSITIVE_NOTICE}</p>
         )}
 
         {config && (
           <>
-            <h2>3. Recipient and details</h2>
-            {effective && !locked && (
+            <h2 style={mode === "staff" ? undefined : { marginTop: 0 }}>{mode === "staff" ? "3. Recipient and details" : "1. Customer and details"}</h2>
+            {mode === "staff" && effective && !locked && (
               <p style={{ margin: "0 0 0.75rem", fontSize: "0.9rem" }}>
                 {config.recipient === "technician" ? (
                   <>The letter is addressed to {effective.name}, with the address and contact details from the record. </>
@@ -748,10 +802,22 @@ export default function Writer({
               </label>
               <textarea rows={3} value={details.purpose ?? ""} disabled={locked} placeholder={config.purposePlaceholder} onChange={(e) => { setDetails({ ...details, purpose: e.target.value }); setDirty(true); }} />
             </div>
-            <div className="field">
-              <label>Additional instructions (optional)</label>
-              <textarea rows={2} value={details.instructions ?? ""} disabled={locked} placeholder="Tone, length, anything to include or leave out" onChange={(e) => { setDetails({ ...details, instructions: e.target.value }); setDirty(true); }} />
-            </div>
+            {mode === "staff" && (
+              <div className="field">
+                <label>Additional instructions (optional)</label>
+                <textarea rows={2} value={details.instructions ?? ""} disabled={locked} placeholder="Tone, length, anything to include or leave out" onChange={(e) => { setDetails({ ...details, instructions: e.target.value }); setDirty(true); }} />
+              </div>
+            )}
+            {type === "quote" && (
+              <QuoteEditor
+                quote={quote}
+                locked={locked}
+                onChange={(q) => {
+                  setQuote(q);
+                  setDirty(true);
+                }}
+              />
+            )}
             {config.allowContact && (
               <label style={{ display: "flex", gap: "0.5rem", alignItems: "center", marginBottom: "0.75rem", fontSize: "0.9rem" }}>
                 <input type="checkbox" checked={!!details.includeContact} disabled={locked} onChange={(e) => { setDetails({ ...details, includeContact: e.target.checked }); setDirty(true); }} />
@@ -801,18 +867,24 @@ export default function Writer({
                 <button className="btn" onClick={writeFromStock} disabled={!effective || !type}>
                   Write the letter for me
                 </button>
-                <button className="btn btn-secondary" onClick={generate} disabled={!readyToGenerate}>
-                  {busy === "generate" ? "Writing..." : draft?.body && aiGenerated ? "Rewrite with the AI service" : "Write it with the AI service instead"}
-                </button>
+                {mode === "staff" && (
+                  <button className="btn btn-secondary" onClick={generate} disabled={!readyToGenerate}>
+                    {busy === "generate" ? "Writing..." : draft?.body && aiGenerated ? "Rewrite with the AI service" : "Write it with the AI service instead"}
+                  </button>
+                )}
               </div>
             )}
             {!locked && (
               <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
-                &ldquo;Write the letter for me&rdquo; builds it at once from the wording chosen above and the details on this page, and marks anything it does not know. The AI service writes
-                in its own words from the same details and takes a little longer.
+                &ldquo;Write the letter for me&rdquo; builds it at once from the wording chosen above and the details on this page, and marks anything it does not know.
+                {mode === "staff"
+                  ? " The AI service writes in its own words from the same details and takes a little longer."
+                  : type === "quote"
+                  ? " It writes the short note above the quote; the lines and totals are the ones you entered."
+                  : ""}
               </p>
             )}
-            {!techId && <span style={{ marginLeft: "0.75rem", color: "var(--muted)", fontSize: "0.85rem" }}>Choose a technician first.</span>}
+            {mode === "staff" && !techId && <span style={{ marginLeft: "0.75rem", color: "var(--muted)", fontSize: "0.85rem" }}>Choose a technician first.</span>}
             {locked && <p style={{ margin: 0, color: "var(--muted)", fontSize: "0.85rem" }}>This letter is {STATUS_LABEL[status].toLowerCase()}. Reopen it to change the details.</p>}
           </>
         )}
@@ -823,7 +895,7 @@ export default function Writer({
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(340px, 1fr))", gap: "1.25rem", alignItems: "start" }}>
           <div className="card no-print">
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.5rem", flexWrap: "wrap" }}>
-              <h2 style={{ margin: 0 }}>4. Edit the letter</h2>
+              <h2 style={{ margin: 0 }}>{mode === "staff" ? "4" : "2"}. Edit the {type === "quote" ? "quote" : "letter"}</h2>
               <span style={{ color: STATUS_COLOR[status], fontWeight: 600 }}>
                 {STATUS_LABEL[status]}
                 {dirty ? " · unsaved changes" : ""}
@@ -872,7 +944,7 @@ export default function Writer({
               <input value={draft.greeting} readOnly={locked} onChange={(e) => set("greeting", e.target.value)} />
             </div>
             <div className="field">
-              <label>Letter text</label>
+              <label>{type === "quote" ? "Note above the quote" : "Letter text"}</label>
               {!locked && (
                 <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", alignItems: "center", marginBottom: "0.35rem" }}>
                   {(
@@ -968,7 +1040,7 @@ export default function Writer({
                 </button>
               )}
               {!locked && (
-                <button className="btn btn-secondary" onClick={() => changeStatus("finalise")} disabled={busy !== null || openItems.length > 0 || !draft.subject.trim() || !draft.body.trim()}>
+                <button className="btn btn-secondary" onClick={() => changeStatus("finalise")} disabled={busy !== null || openItems.length > 0 || !draft.subject.trim() || (type === "quote" ? quote.lines.length === 0 : !draft.body.trim())}>
                   Finalise
                 </button>
               )}

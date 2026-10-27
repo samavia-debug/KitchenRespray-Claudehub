@@ -10,11 +10,14 @@ import Templates from "./templates";
 import Signatures from "./signatures";
 
 const SECTIONS = ["Write a letter", "Saved letters", "Templates", "Signatures", "Letterhead"] as const;
+// Managers and Staff write customer letters and quotes; the signers and the letterhead are set up by Admins.
+const STAFF_SECTIONS: (typeof SECTIONS)[number][] = ["Write a letter", "Saved letters", "Templates"];
 
 export default function LettersPage() {
   const supabase = createClient();
   const router = useRouter();
   const [authorized, setAuthorized] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [section, setSection] = useState<(typeof SECTIONS)[number]>("Write a letter");
   const [openId, setOpenId] = useState<string | null>(null);
   const [writerKey, setWriterKey] = useState(0);
@@ -36,12 +39,13 @@ export default function LettersPage() {
 
       const { data: myProfile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
 
-      // Employment letters are confidential staff correspondence: Admin only, like the rest of the staff data.
-      if (myProfile?.role !== "Admin") {
+      // Letters about staff are confidential, so only Admins write them. Customer letters and quotes are open to Managers and Staff too, as in the CRM; Viewers have no access.
+      if (myProfile?.role !== "Admin" && myProfile?.role !== "Manager" && myProfile?.role !== "Staff") {
         router.replace("/dashboard");
         return;
       }
 
+      setIsAdmin(myProfile?.role === "Admin");
       setAuthorized(true);
     }
     init();
@@ -57,16 +61,16 @@ export default function LettersPage() {
   return (
     <>
       <div className="page-header no-print">
-        <h1>✉️ Letter Writer</h1>
+        <h1>✉️ Letters &amp; Quotes</h1>
         <p>
-          Write a letter for a technician from the details already in the dashboard: choose the person and the kind of letter, and it fills in their name, address and contact details and writes the letter from your templates or the ready-made paragraphs. You check and edit it, and nothing is sent or issued from here.
+          Write a letter to a customer, a quote with its lines, VAT and total, or (for Admins) a letter about a staff member from the details already in the dashboard. It is written from your templates or the ready-made paragraphs, you check and edit it, and nothing is sent or issued from here.
         </p>
       </div>
 
       {authorized ? (
         <>
           <div className="tabs no-print">
-            {SECTIONS.map((s) => (
+            {SECTIONS.filter((s) => isAdmin || STAFF_SECTIONS.includes(s)).map((s) => (
               <button key={s} className={section === s ? "active" : ""} onClick={() => setSection(s)}>
                 {s}
               </button>
@@ -75,12 +79,12 @@ export default function LettersPage() {
 
           {/* Kept mounted so a letter being written is not lost when switching tabs. */}
           <div style={{ display: section === "Write a letter" ? "block" : "none" }}>
-            <Writer key={writerKey} openId={openId} settingsKey={settingsKey} templatesKey={templatesKey} signersKey={signersKey} onSaved={() => setRefreshKey((k) => k + 1)} onTemplatesChanged={() => setTemplatesKey((k) => k + 1)} />
+            <Writer key={writerKey} isAdmin={isAdmin} openId={openId} settingsKey={settingsKey} templatesKey={templatesKey} signersKey={signersKey} onSaved={() => setRefreshKey((k) => k + 1)} onTemplatesChanged={() => setTemplatesKey((k) => k + 1)} />
           </div>
           {section === "Saved letters" && <SavedLetters onOpen={open} refreshKey={refreshKey} />}
-          {section === "Templates" && <Templates refreshKey={templatesKey} onChanged={() => setTemplatesKey((k) => k + 1)} />}
-          {section === "Signatures" && <Signatures refreshKey={signersKey} onChanged={() => setSignersKey((k) => k + 1)} />}
-          {section === "Letterhead" && <SettingsForm onSaved={() => setSettingsKey((k) => k + 1)} />}
+          {section === "Templates" && <Templates isAdmin={isAdmin} refreshKey={templatesKey} onChanged={() => setTemplatesKey((k) => k + 1)} />}
+          {isAdmin && section === "Signatures" && <Signatures refreshKey={signersKey} onChanged={() => setSignersKey((k) => k + 1)} />}
+          {isAdmin && section === "Letterhead" && <SettingsForm onSaved={() => setSettingsKey((k) => k + 1)} />}
         </>
       ) : (
         <p style={{ color: "var(--muted)" }}>Loading...</p>

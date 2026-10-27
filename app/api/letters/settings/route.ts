@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/session";
+import { lettersAccess } from "@/lib/letters/route-auth";
 import { getSettings, logEvent, saveSettings } from "@/lib/letters/service";
 import { cleanSettings } from "@/lib/letters/validate";
 
+// The letterhead details are on every letter anyway, so anyone who can write one can read them; only Admins change them.
 export async function GET() {
-  const auth = await requireRole(["Admin"]);
+  const auth = await lettersAccess();
   if ("error" in auth) return auth.error;
 
   try {

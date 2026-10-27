@@ -33,11 +33,17 @@ export const LETTER_TYPE_KEYS = [
   "warning",
   "general_business",
   "custom",
+  "sales_letter",
+  "quote",
 ] as const;
 export type LetterTypeKey = (typeof LETTER_TYPE_KEYS)[number];
 
+/** "hr" letters are about staff and stay with Admins; "sales" letters and quotes are for customers and are open to Managers and Staff too. */
+export type LetterDomain = "hr" | "sales";
+
 export type LetterTypeConfig = {
   key: LetterTypeKey;
+  domain: LetterDomain;
   label: string;
   description: string;
   /** Needs management review and approval before it is used. */
@@ -63,6 +69,7 @@ export type LetterTypeConfig = {
 export const LETTER_TYPES: LetterTypeConfig[] = [
   {
     key: "employment_confirmation",
+    domain: "hr",
     label: "Employment confirmation letter",
     description: "Confirms that the person works for the company, in what role and since when.",
     sensitive: false,
@@ -81,6 +88,7 @@ export const LETTER_TYPES: LetterTypeConfig[] = [
   },
   {
     key: "employment_reference",
+    domain: "hr",
     label: "Employment reference letter",
     description: "A reference for a current or former technician. Needs management approval.",
     sensitive: true,
@@ -99,6 +107,7 @@ export const LETTER_TYPES: LetterTypeConfig[] = [
   },
   {
     key: "technician_introduction",
+    domain: "hr",
     label: "Technician introduction letter",
     description: "Introduces a technician to a customer or organisation before a visit.",
     sensitive: false,
@@ -117,6 +126,7 @@ export const LETTER_TYPES: LetterTypeConfig[] = [
   },
   {
     key: "work_assignment",
+    domain: "hr",
     label: "Work assignment letter",
     description: "Tells a technician which job or site they are assigned to.",
     sensitive: false,
@@ -135,6 +145,7 @@ export const LETTER_TYPES: LetterTypeConfig[] = [
   },
   {
     key: "experience_confirmation",
+    domain: "hr",
     label: "Experience confirmation letter",
     description: "Confirms the experience a technician has gained with the company.",
     sensitive: false,
@@ -153,6 +164,7 @@ export const LETTER_TYPES: LetterTypeConfig[] = [
   },
   {
     key: "warning",
+    domain: "hr",
     label: "Warning or disciplinary letter",
     description: "A formal warning. Needs management approval, and often HR or legal advice, before it is used.",
     sensitive: true,
@@ -171,6 +183,7 @@ export const LETTER_TYPES: LetterTypeConfig[] = [
   },
   {
     key: "general_business",
+    domain: "hr",
     label: "General business letter",
     description: "A plain business letter to a customer, supplier or organisation.",
     sensitive: false,
@@ -188,6 +201,7 @@ export const LETTER_TYPES: LetterTypeConfig[] = [
   },
   {
     key: "custom",
+    domain: "hr",
     label: "Custom letter",
     description: "Describe any letter you need in your own words.",
     sensitive: false,
@@ -202,6 +216,42 @@ export const LETTER_TYPES: LetterTypeConfig[] = [
     periodLabel: "Relevant dates",
     showReference: true,
     guidance: "Write the letter the user describes, using only the facts supplied. Do not add facts, commitments or legal wording.",
+  },
+  {
+    key: "sales_letter",
+    domain: "sales",
+    label: "Customer letter",
+    description: "A letter to a customer or a business: following up an enquiry, thanking them for a visit, confirming arrangements.",
+    sensitive: false,
+    recipient: "required",
+    requiredFacts: [],
+    sendFacts: [],
+    allowContact: false,
+    purposeLabel: "What is the letter about?",
+    purposePlaceholder: "e.g. your enquiry about respraying your kitchen",
+    purposeRequired: true,
+    showPeriod: false,
+    periodLabel: "",
+    showReference: true,
+    guidance: "",
+  },
+  {
+    key: "quote",
+    domain: "sales",
+    label: "Quote",
+    description: "A quote for a customer: a short note, the lines with their prices and VAT, the total, and how long it is valid for.",
+    sensitive: false,
+    recipient: "required",
+    requiredFacts: [],
+    sendFacts: [],
+    allowContact: false,
+    purposeLabel: "What is the quote for?",
+    purposePlaceholder: "e.g. respraying your kitchen doors and drawer fronts",
+    purposeRequired: true,
+    showPeriod: false,
+    periodLabel: "",
+    showReference: false,
+    guidance: "",
   },
 ];
 

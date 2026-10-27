@@ -60,8 +60,8 @@ describe("signers", () => {
   it("need a name; the title is optional; they are usable unless switched off", () => {
     expect(cleanSignerInput({ name: "  " })).toEqual({ error: "Enter the signer's name" });
     expect(cleanSignerInput(null)).toEqual({ error: "Nothing was sent" });
-    expect(cleanSignerInput({ name: " Pat  Example ", title: "Director", is_default: true })).toEqual({ value: { name: "Pat Example", title: "Director", is_default: true, active: true } });
-    expect(cleanSignerInput({ name: "A", active: false })).toEqual({ value: { name: "A", title: null, is_default: false, active: false } });
+    expect(cleanSignerInput({ name: " Pat  Example ", title: "Director", is_default: true })).toEqual({ value: { name: "Pat Example", title: "Director", is_default: true, active: true, for_sales: false } });
+    expect(cleanSignerInput({ name: "A", active: false, for_sales: true })).toEqual({ value: { name: "A", title: null, is_default: false, active: false, for_sales: true } });
   });
 
   it("the typed lines under a signature are the name and the title", () => {
