@@ -3,6 +3,18 @@
 import { LETTERHEAD, SHEET_PADDING } from "@/lib/letters/letterhead";
 import { renderLetter, type LetterContent, type LetterSettings } from "@/lib/letters/layout";
 
+function Runs({ runs }: { runs: { text: string; bold?: boolean; italic?: boolean }[] }) {
+  return (
+    <>
+      {runs.map((r, i) => (
+        <span key={i} style={{ fontWeight: r.bold ? 700 : undefined, fontStyle: r.italic ? "italic" : undefined }}>
+          {r.text}
+        </span>
+      ))}
+    </>
+  );
+}
+
 /**
  * The letter as it will print and as the Word file is laid out, on the company letterhead. The same
  * renderLetter() feeds both, so what is previewed is what is exported. The page is drawn at A4 proportions
@@ -46,12 +58,37 @@ export default function LetterPreview({ settings, content }: { settings: LetterS
 
         {l.greeting && <p style={text}>{l.greeting}</p>}
         {l.subject && <p style={{ ...text, fontWeight: 700 }}>{l.subject}</p>}
-        {l.paragraphs.length === 0 && <p style={{ ...text, color: "#999" }}>The letter text will appear here.</p>}
-        {l.paragraphs.map((p, i) => (
-          <p key={i} style={{ ...text, textAlign: "justify", whiteSpace: "pre-line" }}>
-            {p}
-          </p>
-        ))}
+        {l.blocks.length === 0 && <p style={{ ...text, color: "#999" }}>The letter text will appear here.</p>}
+        {l.blocks.map((b, i) =>
+          b.kind === "text" ? (
+            <p key={i} style={{ ...text, textAlign: "justify" }}>
+              {b.lines.map((line, j) => (
+                <span key={j}>
+                  {j > 0 && <br />}
+                  <Runs runs={line} />
+                </span>
+              ))}
+            </p>
+          ) : (
+            b.ordered ? (
+              <ol key={i} style={{ ...text, paddingLeft: "1.6em" }}>
+                {b.items.map((item, j) => (
+                  <li key={j}>
+                    <Runs runs={item} />
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <ul key={i} style={{ ...text, paddingLeft: "1.6em" }}>
+                {b.items.map((item, j) => (
+                  <li key={j}>
+                    <Runs runs={item} />
+                  </li>
+                ))}
+              </ul>
+            )
+          )
+        )}
 
         {l.closing && <p style={{ ...text, marginBottom: 0 }}>{l.closing}</p>}
         <div style={{ marginTop: "0.4em" }}>

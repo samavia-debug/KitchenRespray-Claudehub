@@ -21,6 +21,8 @@ export function cleanDetails(v: unknown): LetterDetails {
     periodFrom: date(d.periodFrom),
     periodTo: date(d.periodTo),
     includeContact: d.includeContact === true,
+    addressBlock: text(d.addressBlock, 600),
+    signatureBlock: text(d.signatureBlock, 300),
   };
 }
 

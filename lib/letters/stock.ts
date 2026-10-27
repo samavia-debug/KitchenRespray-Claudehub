@@ -139,7 +139,7 @@ export function stockFor(type: LetterTypeKey): StockParagraph[] {
 
 // ---- Filling in ----
 
-const TOKEN_LABEL: Record<string, string> = {
+export const TOKEN_LABEL: Record<string, string> = {
   name: "name",
   jobTitle: "job title",
   employmentType: "employment type",
@@ -166,7 +166,7 @@ export function periodText(details: LetterDetails): string {
   return from && to ? `${from} to ${to}` : from || to;
 }
 
-function tokenValues(ctx: StockContext): Record<string, string> {
+export function tokenValues(ctx: StockContext): Record<string, string> {
   const v = ctx.facts.values;
   const former = ctx.facts.former;
   return {

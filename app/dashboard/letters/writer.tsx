@@ -1,9 +1,11 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FACT_LABEL, LETTER_TYPES, LETTER_TYPE_BY_KEY, SENSITIVE_NOTICE, STATUS_LABEL, type FactKey, type LetterStatus, type LetterTypeKey } from "@/lib/letters/config";
 import { applyAdded, formatLongDate, missingFacts, type LetterFacts } from "@/lib/letters/facts";
-import { EMPTY_SETTINGS, type LetterSettings } from "@/lib/letters/layout";
+import { applyFormat, type FormatAction } from "@/lib/letters/format";
+import { EMPTY_SETTINGS, recipientLinesOf, signatureLinesOf, type LetterSettings } from "@/lib/letters/layout";
+import { refreshLetter } from "@/lib/letters/refresh";
 import { unresolvedPlaceholders, type LetterDetails, type Recipient } from "@/lib/letters/prompt";
 import { buildFromStock, fillStock, staffAsRecipient, stockFor, type StockContext } from "@/lib/letters/stock";
 import { TEMPLATE_CATEGORY_LABEL, buildFromTemplate, generaliseLetterText, type LetterTemplate } from "@/lib/letters/templates";
@@ -37,6 +39,9 @@ export default function Writer({
   const [techs, setTechs] = useState<TechnicianListItem[] | null>(null);
   const [templates, setTemplates] = useState<LetterTemplate[]>([]);
   const [templateId, setTemplateId] = useState("");
+  /** The details the letter's wording was last filled from, to see which have changed since. */
+  const [filledWith, setFilledWith] = useState<StockContext | null>(null);
+  const bodyRef = useRef<HTMLTextAreaElement>(null);
   const [techError, setTechError] = useState<string | null>(null);
   const [settings, setSettings] = useState<LetterSettings>(EMPTY_SETTINGS);
 
@@ -91,6 +96,7 @@ export default function Writer({
 
   const reset = useCallback(() => {
     setTemplateId("");
+    setFilledWith(null);
     setSearch("");
     setTechId(null);
     setFacts(null);
@@ -125,7 +131,12 @@ export default function Writer({
         setType(l.letter_type);
         setRecipient(l.recipient || {});
         setDate(l.letter_date);
-        setDetails(l.details || {});
+        // A typed address block or signature that was cleared is stored as empty, which means "use the details".
+        const saved: LetterDetails = { ...(l.details || {}) };
+        if (!saved.addressBlock) delete saved.addressBlock;
+        if (!saved.signatureBlock) delete saved.signatureBlock;
+        setDetails(saved);
+        setFilledWith({ facts: l.facts, company: "Kitchen Respray", recipient: l.recipient || {}, details: saved });
         setDraft({ subject: l.subject, greeting: l.greeting, body: l.body, closing: l.closing });
         setMissing(l.missing || []);
         setAiGenerated(l.ai_generated);
@@ -177,6 +188,11 @@ export default function Writer({
   function addressToStaff() {
     if (!effective) return;
     setRecipient(staffAsRecipient(effective));
+    // Back to the address block built from these details, if one had been typed over.
+    setDetails((d) => {
+      const { addressBlock, ...rest } = d;
+      return rest;
+    });
     setDirty(true);
   }
 
@@ -196,6 +212,27 @@ export default function Writer({
   const currentStaff = matches.filter((t) => !t.former);
   const formerStaff = matches.filter((t) => t.former);
   const openItems = draft ? unresolvedPlaceholders(draft.body) : [];
+
+  // The details as they stand now, and which of them have changed since the letter was written.
+  const contextNow = useMemo<StockContext | null>(
+    () => (effective ? { facts: effective, company: settings.company_name || "Kitchen Respray", recipient, details } : null),
+    [effective, settings.company_name, recipient, details]
+  );
+  const refresh = useMemo(
+    () => (draft && filledWith && contextNow && status === "draft" ? refreshLetter(draft, filledWith, contextNow) : null),
+    [draft, filledWith, contextNow, status]
+  );
+
+  // Anything typed and not saved is lost if the page is closed, so the browser is asked to confirm.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   const set = <K extends keyof Draft>(key: K, value: string) => {
     setDraft((d) => ({ ...(d ?? EMPTY_DRAFT), [key]: value }));
@@ -240,6 +277,7 @@ export default function Writer({
       } else {
         setDraft({ subject: body.draft.subject, greeting: body.draft.greeting, body: body.draft.body, closing: body.draft.closing });
         setMissing(body.draft.missing);
+        setFilledWith(stockContext());
         setFacts(body.facts);
         setAdded({});
         if (!recipient.name && body.recipientName) setRecipient((r) => ({ ...r, name: body.recipientName }));
@@ -266,9 +304,40 @@ export default function Writer({
     const d = chosenTemplate ? buildFromTemplate({ ...chosenTemplate, letter_type: type }, ctx) : buildFromStock(type, ctx);
     setDraft({ subject: d.subject, greeting: d.greeting, body: d.body, closing: d.closing });
     setMissing(d.missing);
+    setFilledWith(ctx);
     setAiGenerated(false);
     setDirty(true);
     setNotice({ kind: "ok", text: "Letter written. Check it, add or change any paragraph below, then save it." });
+  }
+
+  /** Bold, italic or a list on whatever is selected in the letter text. */
+  function format(action: FormatAction) {
+    const el = bodyRef.current;
+    if (!el || !draft || locked) return;
+    const edit = applyFormat(draft.body, el.selectionStart, el.selectionEnd, action);
+    set("body", edit.text);
+    window.setTimeout(() => {
+      el.focus();
+      el.setSelectionRange(edit.start, edit.end);
+    }, 0);
+  }
+
+  function bodyKeys(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (!(e.ctrlKey || e.metaKey) || e.altKey) return;
+    const key = e.key.toLowerCase();
+    if (key === "b" || key === "i") {
+      e.preventDefault();
+      format(key === "b" ? "bold" : "italic");
+    }
+  }
+
+  /** Swaps the details that have changed since the letter was written; the rest of the wording, including edits, stays. */
+  function applyRefresh() {
+    if (!refresh || !contextNow || refresh.changes.length === 0) return;
+    setDraft(refresh.letter);
+    setFilledWith(contextNow);
+    setDirty(true);
+    setNotice({ kind: "ok", text: `Updated: ${refresh.changes.map((c) => c.label).join(", ")}. Your own edits were kept.` });
   }
 
   /** Keeps the letter's wording as a template; the person's name and the company become {name} and {company}. */
@@ -413,6 +482,20 @@ export default function Writer({
     greeting: draft?.greeting ?? "",
     body: draft?.body ?? "",
     closing: draft?.closing ?? "",
+    details: { addressBlock: details.addressBlock, signatureBlock: details.signatureBlock },
+  };
+
+  // The address block and sign-off as they stand: what was typed over them, or what the details give.
+  const addressText = details.addressBlock ?? recipientLinesOf(recipient).join("\n");
+  const signatureText = details.signatureBlock ?? signatureLinesOf(settings).slice(2).join("\n");
+  const setBlock = (key: "addressBlock" | "signatureBlock", value: string | undefined) => {
+    setDetails((d) => {
+      const next = { ...d };
+      if (value === undefined) delete next[key];
+      else next[key] = value;
+      return next;
+    });
+    setDirty(true);
   };
 
   return (
@@ -725,6 +808,23 @@ export default function Writer({
               </div>
             )}
 
+            {refresh && refresh.changes.length > 0 && (
+              <div style={{ margin: "0.75rem 0", padding: "0.6rem 0.8rem", background: "#eef6ff", border: "1px solid #a9c8ee", borderRadius: 6, fontSize: "0.85rem", color: "#1f4a7a" }}>
+                <strong>Some details have changed since the letter was written:</strong>
+                <ul style={{ margin: "0.3rem 0 0.5rem", paddingLeft: "1.1rem" }}>
+                  {refresh.changes.map((c) => (
+                    <li key={c.label}>
+                      {c.label}: {c.from} → {c.to}
+                    </li>
+                  ))}
+                </ul>
+                <button className="btn btn-secondary" onClick={applyRefresh}>
+                  Update the letter with these
+                </button>
+                <span style={{ marginLeft: "0.5rem" }}>Only these details are swapped. Everything else you have written stays.</span>
+              </div>
+            )}
+
             <div className="field">
               <label>Subject</label>
               <input value={draft.subject} readOnly={locked} onChange={(e) => set("subject", e.target.value)} />
@@ -735,7 +835,24 @@ export default function Writer({
             </div>
             <div className="field">
               <label>Letter text</label>
-              <textarea rows={14} value={draft.body} readOnly={locked} onChange={(e) => set("body", e.target.value)} />
+              {!locked && (
+                <div style={{ display: "flex", gap: "0.35rem", flexWrap: "wrap", alignItems: "center", marginBottom: "0.35rem" }}>
+                  {(
+                    [
+                      ["bold", "B", "Bold (Ctrl+B)", { fontWeight: 700 }],
+                      ["italic", "I", "Italic (Ctrl+I)", { fontStyle: "italic" }],
+                      ["bullets", "• List", "Bullet list", {}],
+                      ["numbers", "1. List", "Numbered list", {}],
+                    ] as [FormatAction, string, string, React.CSSProperties][]
+                  ).map(([action, label, title, style]) => (
+                    <button key={action} type="button" className="btn btn-secondary" title={title} style={{ padding: "0.2rem 0.6rem", ...style }} onMouseDown={(e) => e.preventDefault()} onClick={() => format(action)}>
+                      {label}
+                    </button>
+                  ))}
+                  <span style={{ fontSize: "0.72rem", color: "var(--muted)" }}>Select words, then click. Shown in the preview, the print and the Word file.</span>
+                </div>
+              )}
+              <textarea ref={bodyRef} rows={14} value={draft.body} readOnly={locked} onKeyDown={bodyKeys} onChange={(e) => set("body", e.target.value)} />
             </div>
             {!locked && type && (
               <div className="field">
@@ -759,6 +876,30 @@ export default function Writer({
             <div className="field">
               <label>Closing</label>
               <input value={draft.closing} readOnly={locked} onChange={(e) => set("closing", e.target.value)} />
+            </div>
+            <div className="field">
+              <label>
+                Address block (as printed)
+                {details.addressBlock !== undefined && !locked && (
+                  <button type="button" className="btn btn-secondary" style={{ marginLeft: "0.5rem", padding: "0.1rem 0.5rem", fontSize: "0.72rem" }} onClick={() => setBlock("addressBlock", undefined)}>
+                    Use the details from step 3
+                  </button>
+                )}
+              </label>
+              <textarea rows={4} value={addressText} readOnly={locked} onChange={(e) => setBlock("addressBlock", e.target.value)} />
+              <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>One line per row. Built from the recipient details; type here to change it for this letter only.</div>
+            </div>
+            <div className="field">
+              <label>
+                Signed off by
+                {details.signatureBlock !== undefined && !locked && (
+                  <button type="button" className="btn btn-secondary" style={{ marginLeft: "0.5rem", padding: "0.1rem 0.5rem", fontSize: "0.72rem" }} onClick={() => setBlock("signatureBlock", undefined)}>
+                    Use the Letterhead tab details
+                  </button>
+                )}
+              </label>
+              <textarea rows={2} value={signatureText} readOnly={locked} onChange={(e) => setBlock("signatureBlock", e.target.value)} />
+              <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>Name, then job title. Room to sign is left above it. This is only typed words; the letter is never marked as signed because of it.</div>
             </div>
 
             <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>

@@ -29,6 +29,16 @@ function paragraph(runs: Run[], opts: { after?: number; align?: "left" | "center
   return `<w:p>${ppr}${rs}</w:p>`;
 }
 
+/** Runs of the letter's text in the body font, with bold and italic where the text has them. */
+function runsXml(runs: { text: string; bold?: boolean; italic?: boolean }[]): string {
+  return runs
+    .map(
+      (r) =>
+        `<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/>${r.bold ? "<w:b/>" : ""}${r.italic ? "<w:i/>" : ""}<w:sz w:val="22"/></w:rPr><w:t xml:space="preserve">${esc(r.text)}</w:t></w:r>`
+    )
+    .join("");
+}
+
 /**
  * The letterhead artwork as a full-page picture in the page header, behind the text, so it is on every page and
  * the letter's own text stays editable on top of it.
@@ -72,13 +82,22 @@ export function buildDocx(l: RenderedLetter, now: Date = new Date(), artwork?: U
   l.recipientLines.forEach((line, i) => body.push(paragraph([{ text: line }], { after: i === l.recipientLines.length - 1 ? 240 : 0 })));
   if (l.greeting) body.push(paragraph([{ text: l.greeting }]));
   if (l.subject) body.push(paragraph([{ text: l.subject, bold: true }], { after: 240 }));
-  l.paragraphs.forEach((p) => {
-    // A line break inside a paragraph is kept as a Word line break.
-    const parts = p.split("\n");
-    const runs: string = parts
-      .map((t, i) => `${i > 0 ? "<w:r><w:br/></w:r>" : ""}<w:r><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:cs="Arial"/><w:sz w:val="22"/></w:rPr><w:t xml:space="preserve">${esc(t)}</w:t></w:r>`)
-      .join("");
-    body.push(`<w:p><w:pPr><w:spacing w:after="200" w:line="276" w:lineRule="auto"/><w:jc w:val="both"/></w:pPr>${runs}</w:p>`);
+  l.blocks.forEach((block) => {
+    if (block.kind === "text") {
+      // A line break inside a paragraph is kept as a Word line break.
+      const runs = block.lines.map((line, i) => `${i > 0 ? "<w:r><w:br/></w:r>" : ""}${runsXml(line)}`).join("");
+      body.push(`<w:p><w:pPr><w:spacing w:after="200" w:line="276" w:lineRule="auto"/><w:jc w:val="both"/></w:pPr>${runs}</w:p>`);
+      return;
+    }
+    // A list as indented lines with a hanging bullet or number, so it needs no list definitions and edits like any text.
+    block.items.forEach((item, i) => {
+      const last = i === block.items.length - 1;
+      const marker = block.ordered ? `${i + 1}.` : "•";
+      body.push(
+        `<w:p><w:pPr><w:spacing w:after="${last ? 200 : 60}" w:line="276" w:lineRule="auto"/><w:ind w:left="567" w:hanging="283"/></w:pPr>` +
+          `${runsXml([{ text: marker }])}<w:r><w:tab/></w:r>${runsXml(item)}</w:p>`
+      );
+    });
   });
   if (l.closing) body.push(paragraph([{ text: l.closing }], { after: 120 }));
   l.signature.forEach((line, i) => body.push(paragraph([{ text: line, bold: i === 2 }], { after: 0 })));

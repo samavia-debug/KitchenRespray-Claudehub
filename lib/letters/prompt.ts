@@ -9,6 +9,9 @@ export type LetterDetails = {
   periodFrom?: string;
   periodTo?: string;
   includeContact?: boolean;
+  /** Typed over the address block and the signature on this letter; never sent to the AI service. */
+  addressBlock?: string;
+  signatureBlock?: string;
 };
 
 export type Draft = { subject: string; greeting: string; body: string; closing: string; missing: string[] };

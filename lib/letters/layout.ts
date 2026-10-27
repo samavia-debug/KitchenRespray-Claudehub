@@ -1,6 +1,7 @@
 import { LETTER_TYPE_BY_KEY } from "./config";
 import { formatLongDate } from "./facts";
-import type { Recipient } from "./prompt";
+import { parseBlocks, type Block } from "./format";
+import type { LetterDetails, Recipient } from "./prompt";
 
 export type LetterSettings = {
   company_name: string | null;
@@ -33,6 +34,8 @@ export type LetterContent = {
   greeting: string;
   body: string;
   closing: string;
+  /** Typed over the address block and the signature on this letter only; the rest of `details` is not used for layout. */
+  details?: Pick<LetterDetails, "addressBlock" | "signatureBlock">;
 };
 
 export type RenderedLetter = {
@@ -43,6 +46,8 @@ export type RenderedLetter = {
   subject: string;
   greeting: string;
   paragraphs: string[];
+  /** The same text as paragraphs, lists and bold or italic runs. */
+  blocks: Block[];
   closing: string;
   /** Typed signatory block; empty lines leave room for a handwritten signature. */
   signature: string[];
@@ -50,6 +55,18 @@ export type RenderedLetter = {
 };
 
 const lines = (s: string | null | undefined) => (s ? s.split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : []);
+
+/** The addressee block built from the recipient details: name, organisation, address, then phone and email. */
+export function recipientLinesOf(r: Recipient): string[] {
+  return [r.name, r.organisation, ...lines(r.address), r.phone ? `Tel: ${r.phone}` : "", r.email ? `Email: ${r.email}` : ""].filter((x): x is string => !!x && !!x.trim());
+}
+
+/** The sign-off: room to sign, then the signatory's name and title. */
+export function signatureLinesOf(settings: Pick<LetterSettings, "signatory_name" | "signatory_title">): string[] {
+  return settings.signatory_name
+    ? ["", "", settings.signatory_name, settings.signatory_title || ""].filter((l, i) => i < 2 || !!l)
+    : ["", "", "[Signatory not set — add it in the Letter Writer settings]"];
+}
 
 /**
  * A letter that has not been approved must not be mistaken for one that has,
@@ -70,12 +87,11 @@ export function renderLetter(settings: LetterSettings, c: LetterContent, options
   const contact = [settings.phone, settings.email, settings.website].filter(Boolean).join("  ·  ");
   const letterhead = options.artwork ? [] : [settings.company_name || "", ...lines(settings.address), contact].filter(Boolean);
 
-  const r = c.recipient || {};
-  const recipientLines = [r.name, r.organisation, ...lines(r.address), r.phone ? `Tel: ${r.phone}` : "", r.email ? `Email: ${r.email}` : ""].filter((x): x is string => !!x && !!x.trim());
-
-  const signature = settings.signatory_name
-    ? ["", "", settings.signatory_name, settings.signatory_title || ""].filter((l, i) => i < 2 || !!l)
-    : ["", "", "[Signatory not set — add it in the Letter Writer settings]"];
+  // Words typed over the address block or the signature on this letter win over the ones built from the details.
+  const typedAddress = lines(c.details?.addressBlock);
+  const typedSignature = lines(c.details?.signatureBlock);
+  const recipientLines = typedAddress.length > 0 ? typedAddress : recipientLinesOf(c.recipient || {});
+  const signature = typedSignature.length > 0 ? ["", "", ...typedSignature] : signatureLinesOf(settings);
 
   return {
     banner: bannerFor(c.status, c.letter_type),
@@ -85,6 +101,7 @@ export function renderLetter(settings: LetterSettings, c: LetterContent, options
     subject: c.subject.trim(),
     greeting: c.greeting.trim(),
     paragraphs: c.body.replace(/\r\n/g, "\n").split(/\n\s*\n/).map((p) => p.trim()).filter(Boolean),
+    blocks: parseBlocks(c.body),
     closing: c.closing.trim(),
     signature,
     footer: settings.footer_text?.trim() || null,
