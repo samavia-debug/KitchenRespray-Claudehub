@@ -5,6 +5,7 @@ import { syncGoogleConnections } from "@/lib/google/sync";
 import { isConnecteamConfigured } from "@/lib/connecteam/client";
 import { notifySlack, notifyWhatsApp } from "@/lib/monitoring/notify";
 import { sendComplianceAlerts } from "@/lib/compliance/service";
+import { sendFleetAlerts } from "@/lib/fleet/service";
 import { bookingsWriteEnabled, graphConfig } from "@/lib/bookings/config";
 import { bookingsRanRecently, runBookingsSync } from "@/lib/bookings/service";
 
@@ -191,6 +192,7 @@ async function runCron(request: NextRequest) {
 
   // Expiry warnings go out in working hours only, so nobody is woken for a licence that runs out next month.
   let complianceAlerts: { sent?: number; error?: string; skipped?: string } = { skipped: "outside working hours" };
+  let fleetAlerts: { sent?: number; error?: string; skipped?: string } = { skipped: "outside working hours" };
   const dublinHour = Number(new Intl.DateTimeFormat("en-GB", { timeZone: "Europe/Dublin", hour: "2-digit", hourCycle: "h23" }).format(Date.now()));
   if (dublinHour >= 7 && dublinHour < 19) {
     try {
@@ -199,6 +201,13 @@ async function runCron(request: NextRequest) {
     } catch (err: any) {
       // The register table may not exist yet (migration not run); that is not a cron failure.
       complianceAlerts = { error: err.message };
+    }
+    try {
+      const result = await sendFleetAlerts();
+      fleetAlerts = result.skipped ? { skipped: result.skipped } : { sent: result.sent };
+    } catch (err: any) {
+      // Same as above: the fleet table may not exist yet.
+      fleetAlerts = { error: err.message };
     }
   }
 
@@ -211,6 +220,7 @@ async function runCron(request: NextRequest) {
     securityResults,
     googleSync,
     complianceAlerts,
+    fleetAlerts,
     bookingsSync,
   });
 }

@@ -116,6 +116,7 @@ export default function SidebarNav() {
     ...(isAdmin ? [{ href: "/dashboard/operations", label: "📊 Operations" }] : []),
     ...(isAdmin ? [{ href: "/dashboard/connecteam", label: "👥 Connecteam" }] : []),
     ...(isAdmin ? [{ href: "/dashboard/letters", label: "✉️ Letter Writer" }] : []),
+    ...(isAdmin ? [{ href: "/dashboard/fleet", label: "🚐 Fleet" }] : []),
     ...(canUseCrm ? [{ href: "/dashboard/crm", label: "🤝 Trade Sales CRM" }] : []),
     ...(isManagerOrAbove ? [{ href: "/dashboard/knowledge", label: "Company Knowledge" }] : []),
     ...(isAdmin ? [{ href: "/dashboard/settings", label: "Settings" }] : []),

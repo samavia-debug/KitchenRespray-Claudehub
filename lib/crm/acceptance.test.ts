@@ -516,6 +516,9 @@ describe("12. The rest of the dashboard is untouched", () => {
       // Letter Writer templates: the company's own wording, edited by staff.
       "lib/letters/templates.ts", "lib/letters/templates.test.ts", "lib/letters/template-service.ts", "app/dashboard/letters/templates.tsx",
       "app/api/letters/templates/route.ts", "app/api/letters/templates/[id]/route.ts",
+      // Fleet: the van list with finance figures and tax, DOE and insurance due dates (the cron runs its warnings; the compliance service shares its notifier check).
+      "app/dashboard/fleet/page.tsx", "app/dashboard/fleet/fleet-view.tsx", "app/api/fleet/route.ts", "app/api/fleet/[id]/route.ts", "app/api/fleet/import/route.ts",
+      "lib/fleet/fleet.ts", "lib/fleet/import.ts", "lib/fleet/service.ts", "lib/fleet/fleet.test.ts", "app/api/monitoring/cron/route.ts", "lib/compliance/service.ts",
     ];
     expect(out.filter((f) => ![".gitignore", "app/dashboard/layout.tsx", "app/dashboard/sidebar-nav.tsx", "app/globals.css", "lib/letters/prompt.ts", ...later].includes(f))).toEqual([]);
   });

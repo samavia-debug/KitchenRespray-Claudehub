@@ -178,7 +178,7 @@ export async function scanDocuments(limit: number, documentId?: string): Promise
 
 // ---- Warnings ----
 
-function notificationsConfigured(): boolean {
+export function notificationsConfigured(): boolean {
   const e = process.env;
   const whatsapp = e.TWILIO_ACCOUNT_SID && e.TWILIO_AUTH_TOKEN && e.TWILIO_WHATSAPP_FROM && e.TWILIO_WHATSAPP_TO;
   return !!(e.SLACK_WEBHOOK_URL || whatsapp);
