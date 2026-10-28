@@ -128,3 +128,17 @@ describe("a letter on the letterhead", () => {
     expect(text(doc, "word/document.xml")).not.toContain("headerReference");
   });
 });
+
+describe("printing the letter", () => {
+  const css = readFileSync(join(__dirname, "../../app/globals.css"), "utf8");
+  const printBlock = css.slice(css.indexOf("@media print"));
+
+  it("hides anything on the page that is not the app, so a hosting badge or extension overlay is not printed on the letter", () => {
+    expect(printBlock).toContain("html > :not(head):not(body)");
+    expect(printBlock).toContain("body > :not(.app-shell)");
+  });
+
+  it("still hides the menu and everything marked no-print", () => {
+    expect(printBlock).toMatch(/\.no-print,\s*\.sidebar,\s*\.topbar\s*\{\s*display: none !important;/);
+  });
+});

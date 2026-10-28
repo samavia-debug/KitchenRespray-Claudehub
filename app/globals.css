@@ -487,6 +487,11 @@ button {
   .topbar {
     display: none !important;
   }
+  /* Anything else added to the page from outside the app (a hosting badge or overlay, a browser extension) is not part of the letter and must not print on it. */
+  html > :not(head):not(body),
+  body > :not(.app-shell) {
+    display: none !important;
+  }
   body,
   .app-shell,
   .main-area {
