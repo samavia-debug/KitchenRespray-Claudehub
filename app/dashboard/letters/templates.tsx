@@ -8,6 +8,7 @@ import {
   TEMPLATE_CATEGORY_LABEL,
   TEMPLATE_TOKENS,
   buildFromTemplate,
+  templateFields,
   type LetterTemplate,
   type TemplateCategory,
   type TemplateInput,
@@ -54,7 +55,12 @@ export default function Templates({ isAdmin, onChanged, refreshKey }: { isAdmin:
   }, [load, refreshKey]);
 
   const visible = useMemo(() => (templates || []).filter((t) => !filter || t.category === filter), [templates, filter]);
-  const preview = useMemo(() => buildFromTemplate(form, SAMPLE_CONTEXT), [form]);
+  // In the preview each fill-in box shows as its own label in brackets, so the wording around it can be read.
+  const preview = useMemo(() => {
+    const boxes: Record<string, string> = {};
+    for (const f of templateFields(form)) boxes[f.label] = `[${f.label}]`;
+    return buildFromTemplate(form, SAMPLE_CONTEXT, boxes);
+  }, [form]);
   const tableMissing = !!error && /does not exist|could not find the table|schema cache/i.test(error);
 
   function leave(): boolean {
@@ -84,8 +90,18 @@ export default function Templates({ isAdmin, onChanged, refreshKey }: { isAdmin:
 
   /** Puts {detail} at the cursor in whichever box was used last. */
   function insert(token: string) {
+    insertText(`{${token}}`);
+  }
+
+  /** Adds a box that is filled in each time the template is used, such as the date of a conversation. */
+  function addFillIn() {
+    const label = window.prompt("What should the box ask for? For example: Date of the conversation");
+    const clean = (label ?? "").replace(/[\[\]\n]/g, " ").replace(/\s+/g, " ").trim();
+    if (clean) insertText(`[[${clean}]]`);
+  }
+
+  function insertText(text: string) {
     const el = fields.current[focus];
-    const text = `{${token}}`;
     const current = form[focus];
     const start = el?.selectionStart ?? current.length;
     const end = el?.selectionEnd ?? start;
@@ -182,7 +198,7 @@ export default function Templates({ isAdmin, onChanged, refreshKey }: { isAdmin:
           </button>
           {isAdmin && (
             <button className="btn btn-secondary" onClick={addStarters} disabled={busy}>
-              Add the ready-made wording as templates
+              Add the ready-made wording and the lawyers' letters of concern as templates
             </button>
           )}
         </div>
@@ -257,8 +273,13 @@ export default function Templates({ isAdmin, onChanged, refreshKey }: { isAdmin:
                   </option>
                 ))}
               </select>
+              <div style={{ marginTop: "0.4rem" }}>
+                <button type="button" className="btn btn-secondary" onClick={addFillIn}>
+                  Add a fill-in box
+                </button>
+              </div>
               <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>
-                Each {"{detail}"} is filled in from the staff record and the form when the letter is written. If it is not known, the letter shows a [CONFIRM: ...] note to fill in.
+                Each {"{detail}"} is filled in from the staff record and the form when the letter is written. A fill-in box, written [[like this]], is asked for each time the template is used. If anything is not known, the letter shows a [CONFIRM: ...] note to fill in.
               </div>
             </div>
 

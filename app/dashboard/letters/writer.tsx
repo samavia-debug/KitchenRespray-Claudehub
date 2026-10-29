@@ -8,7 +8,7 @@ import { EMPTY_SETTINGS, recipientLinesOf, signatureLinesOf, type LetterSettings
 import { refreshLetter } from "@/lib/letters/refresh";
 import { unresolvedPlaceholders, type LetterDetails, type Recipient } from "@/lib/letters/prompt";
 import { buildFromStock, fillStock, staffAsRecipient, stockFor, type StockContext } from "@/lib/letters/stock";
-import { TEMPLATE_CATEGORY_LABEL, buildFromTemplate, categoryForType, generaliseLetterText, type LetterTemplate } from "@/lib/letters/templates";
+import { TEMPLATE_CATEGORY_LABEL, buildFromTemplate, categoryForType, generaliseLetterText, templateFields, type LetterTemplate } from "@/lib/letters/templates";
 import type { LetterRow, TechnicianListItem } from "@/lib/letters/service";
 import { showSignatureImage, signerLines, type Signer } from "@/lib/letters/signers";
 import { EMPTY_QUOTE, type Quote } from "@/lib/letters/quote";
@@ -52,6 +52,8 @@ export default function Writer({
   const [techs, setTechs] = useState<TechnicianListItem[] | null>(null);
   const [templates, setTemplates] = useState<LetterTemplate[]>([]);
   const [templateId, setTemplateId] = useState("");
+  /** What has been typed into the chosen template's fill-in boxes, by label. */
+  const [fieldValues, setFieldValues] = useState<Record<string, string>>({});
   const [signers, setSigners] = useState<Signer[]>([]);
   /** The details the letter's wording was last filled from, to see which have changed since. */
   const [filledWith, setFilledWith] = useState<StockContext | null>(null);
@@ -123,6 +125,7 @@ export default function Writer({
     setMode(next);
     setQuote(newQuote(todayIso()));
     setTemplateId("");
+    setFieldValues({});
     setFilledWith(null);
     setSearch("");
     setTechId(null);
@@ -328,13 +331,14 @@ export default function Writer({
     effective ? { facts: effective, company: settings.company_name || "Kitchen Respray", recipient, details } : null;
 
   const chosenTemplate = templates.find((t) => t.id === templateId) ?? null;
+  const templateBoxes = chosenTemplate ? templateFields(chosenTemplate) : [];
 
   /** The whole letter from the chosen template, or the ready-made paragraphs: instant, and only what the record and the form say. */
   function writeFromStock() {
     const ctx = stockContext();
     if (!ctx || !type) return;
     if (draft?.body && dirty && !window.confirm("Write the letter again? Your edits to the current letter will be replaced.")) return;
-    const d = chosenTemplate ? buildFromTemplate({ ...chosenTemplate, letter_type: type }, ctx) : buildFromStock(type, ctx);
+    const d = chosenTemplate ? buildFromTemplate({ ...chosenTemplate, letter_type: type }, ctx, fieldValues) : buildFromStock(type, ctx);
     setDraft({ subject: d.subject, greeting: d.greeting, body: d.body, closing: d.closing });
     setMissing(d.missing);
     setFilledWith(ctx);
@@ -862,23 +866,43 @@ export default function Writer({
                 <div style={{ fontSize: "0.72rem", color: "var(--muted)" }}>Add or change templates on the Templates tab.</div>
               </div>
             )}
+            {!locked && templateBoxes.length > 0 && (
+              <div style={{ margin: "0 0 0.9rem", padding: "0.75rem 0.9rem", border: "1px solid var(--border, #ddd)", borderRadius: 6 }}>
+                <strong style={{ fontSize: "0.9rem" }}>Fill in for this letter</strong>
+                <p style={{ margin: "0.2rem 0 0.6rem", fontSize: "0.78rem", color: "var(--muted)" }}>
+                  The template's own wording is kept exactly. These are the parts that change from letter to letter. A box left empty is marked in the letter so it can't be finalised by mistake.
+                </p>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))", gap: "0.6rem" }}>
+                  {templateBoxes.map((f) => (
+                    <div className="field" style={{ margin: 0, gridColumn: f.kind === "long" ? "1 / -1" : undefined }} key={f.label}>
+                      <label>{f.label}</label>
+                      {f.kind === "long" ? (
+                        <textarea rows={3} value={fieldValues[f.label] ?? ""} onChange={(e) => setFieldValues({ ...fieldValues, [f.label]: e.target.value })} />
+                      ) : (
+                        <input type={f.kind === "date" ? "date" : "text"} value={fieldValues[f.label] ?? ""} onChange={(e) => setFieldValues({ ...fieldValues, [f.label]: e.target.value })} />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             {!locked && (
               <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", alignItems: "center" }}>
                 <button className="btn" onClick={writeFromStock} disabled={!effective || !type}>
-                  Write the letter for me
+                  {chosenTemplate ? "Write the letter from this template" : "Write the letter from the ready-made wording"}
                 </button>
                 {mode === "staff" && (
                   <button className="btn btn-secondary" onClick={generate} disabled={!readyToGenerate}>
-                    {busy === "generate" ? "Writing..." : draft?.body && aiGenerated ? "Rewrite with the AI service" : "Write it with the AI service instead"}
+                    {busy === "generate" ? "Writing..." : draft?.body && aiGenerated ? "Have the AI write it again" : "Have the AI write it from my description"}
                   </button>
                 )}
               </div>
             )}
             {!locked && (
               <p style={{ margin: "0.5rem 0 0", fontSize: "0.8rem", color: "var(--muted)" }}>
-                &ldquo;Write the letter for me&rdquo; builds it at once from the wording chosen above and the details on this page, and marks anything it does not know.
+                The first button builds the letter at once from the wording chosen above and the details on this page, using the template or ready-made wording as it is, and marks anything it does not know.
                 {mode === "staff"
-                  ? " The AI service writes in its own words from the same details and takes a little longer."
+                  ? " The AI button is different: it writes new wording from what you type under \"The matter, in facts only\", so use it when no template fits. It keeps to the facts you give and does not add allegations or legal wording."
                   : type === "quote"
                   ? " It writes the short note above the quote; the lines and totals are the ones you entered."
                   : ""}

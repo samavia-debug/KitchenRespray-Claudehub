@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { LETTER_TYPES } from "./config";
 import { unresolvedPlaceholders } from "./prompt";
 import { STOCK, type StockContext } from "./stock";
-import { SAMPLE_CONTEXT, TEMPLATE_TOKENS, buildFromTemplate, cleanTemplateInput, generaliseLetterText, starterTemplates } from "./templates";
+import { CONCERN_LETTERS } from "./concern-letters";
+import { parseBlocks } from "./format";
+import { SAMPLE_CONTEXT, TEMPLATE_TOKENS, buildFromTemplate, cleanTemplateInput, fillFields, generaliseLetterText, starterTemplates, templateFields } from "./templates";
+import { nextStatus } from "./validate";
 
 const valid = { name: "Mortgage letter", category: "hr", letter_type: "employment_confirmation", subject: "Employment: {name}", greeting: "", body: "{name} {is} employed as {jobTitle}.", closing: "" };
 
@@ -118,5 +121,113 @@ describe("generaliseLetterText", () => {
   it("leaves text alone when there is nothing to swap, and never swaps a very short name", () => {
     expect(generaliseLetterText("Hello.", { name: "Pat Example" }, "Kitchen Respray")).toBe("Hello.");
     expect(generaliseLetterText("Al is here", { name: "Al" }, "")).toBe("Al is here");
+  });
+});
+
+describe("fill-in boxes", () => {
+  const tpl = {
+    letter_type: "warning" as const,
+    subject: "Concern: [[Topic]]",
+    greeting: "Dear {name},",
+    body: "Further to our conversation on [[Date of the conversation]] I am writing.\n\nYou said:\n\n[[The reason the employee gave]]\n\nAgain: [[ Date of the   conversation ]].",
+    closing: "Yours sincerely,",
+  };
+
+  it("lists each box once, in order, and says what kind it is", () => {
+    expect(templateFields(tpl)).toEqual([
+      { label: "Topic", kind: "text" },
+      { label: "Date of the conversation", kind: "date" },
+      { label: "The reason the employee gave", kind: "long" },
+    ]);
+    expect(templateFields({ subject: "", greeting: "", body: "No boxes here, only {name}.", closing: "" })).toEqual([]);
+  });
+
+  it("puts what was typed into every place a box appears, writing a date out", () => {
+    const d = buildFromTemplate(tpl, SAMPLE_CONTEXT, { Topic: "lateness", "Date of the conversation": "2026-10-28", "The reason the employee gave": "Traffic on the M50." });
+    expect(d.subject).toBe("Concern: lateness");
+    expect(d.greeting).toBe("Dear Pat Example,");
+    expect(d.body).toBe("Further to our conversation on 28 October 2026 I am writing.\n\nYou said:\n\nTraffic on the M50.\n\nAgain: 28 October 2026.");
+    expect(d.missing).toEqual([]);
+  });
+
+  it("marks a box left empty, so the letter cannot be finalised until it is filled in", () => {
+    const d = buildFromTemplate(tpl, SAMPLE_CONTEXT, { Topic: "lateness", "Date of the conversation": "   " });
+    expect(d.body).toContain("[CONFIRM: Date of the conversation]");
+    expect(d.body).toContain("[CONFIRM: The reason the employee gave]");
+    expect(d.missing).toEqual(["Date of the conversation", "The reason the employee gave"]);
+    expect(nextStatus("draft", "finalise", { subject: d.subject, body: d.body, letter_type: "warning" }).ok).toBe(false);
+  });
+
+  it("does not let typed text open a new box or break the wording", () => {
+    expect(fillFields("A [[Reason]] B", { Reason: "x [[Evil]] y" })).toBe("A x Evil y B");
+  });
+
+  it("a date that is not in the date format is left as typed", () => {
+    expect(fillFields("On [[Date]].", { Date: "last Tuesday" })).toBe("On last Tuesday.");
+  });
+});
+
+describe("the lawyers' letters of concern", () => {
+  it("are five valid warning templates, each with its own name", () => {
+    expect(CONCERN_LETTERS.map((t) => t.name)).toEqual([
+      "Letter of concern: Lateness",
+      "Letter of concern: Unfinished jobs",
+      "Letter of concern: Dangerous driving",
+      "Letter of concern: Face mask",
+      "Letter of concern: Before and after pictures",
+    ]);
+    for (const t of CONCERN_LETTERS) {
+      expect("value" in cleanTemplateInput(t), t.name).toBe(true);
+      expect(t.letter_type).toBe("warning");
+      expect(t.category).toBe("hr");
+    }
+  });
+
+  it("keep the lawyers' sentences word for word, including their punctuation", () => {
+    const all = CONCERN_LETTERS.map((t) => t.body);
+    const warning = "On this particular occasion, we have decided not to proceed with formal disciplinary action. As a consequence, therefore you are now being issued with an informal warning.";
+    expect(all.filter((b) => b.includes(warning))).toHaveLength(4);
+    // The driving letter is punctuated differently, and is kept as it is.
+    expect(all[2]).toContain("As a consequence therefore you are now being issued with an informal warning.");
+    expect(all[2]).toContain("regarding the content of this letter please do not hesitate to contact me.");
+    for (const b of all) {
+      expect(b).toContain("Please understand from this letter that you are now in receipt of what we consider to be a reasonable written management instruction not to repeat these actions in the future.");
+      expect(b).toContain("Although this is not a formal warning, should there be any repeat of this conduct, or indeed any misconduct in general you may be subject to formal disciplinary action. Please find enclosed a copy of the company's disciplinary rules and procedures in this regard.");
+    }
+    expect(all[0]).toContain("Having listened to your explanation I consider it to be unsatisfactory because all employees are expected to start their shifts on their allocated time. This is to ensure operational efficiency and our customer's needs are met.");
+    expect(all[3]).toContain("you failed to wear a face mask while carrying out spray painting as outlined in our employee handbook and as you are in close contact with dangerous chemicals.");
+    expect(all[4]).toContain("you failed to send before and after pictures as requested to do so by management.");
+  });
+
+  it("hold no one's name or address: the person comes from the record and the signer from Signed off by", () => {
+    for (const t of CONCERN_LETTERS) {
+      const everything = [t.name, t.subject, t.greeting, t.body, t.closing].join("\n");
+      expect(everything, t.name).not.toMatch(/Mckinney|Maria|Philip|Erica|Carroll|Soluos|Solous|Souls|Tower|Unit 5|Bray|Clapinski|Flinn/i);
+      expect(t.greeting).toBe("Dear {name},");
+      expect(t.closing).toBe("Yours sincerely,");
+    }
+  });
+
+  it("ask only for what changes: the date of the conversation, and for two of them the employee's reason", () => {
+    expect(templateFields(CONCERN_LETTERS[0]).map((f) => f.label)).toEqual(["Date of the conversation", "The reason the employee gave"]);
+    expect(templateFields(CONCERN_LETTERS[1]).map((f) => f.label)).toEqual(["Date of the conversation", "The reason the employee gave"]);
+    expect(templateFields(CONCERN_LETTERS[2])).toEqual([]);
+    for (const i of [3, 4]) expect(templateFields(CONCERN_LETTERS[i]).map((f) => f.label)).toEqual(["Date of the conversation"]);
+  });
+
+  it("write into a finished letter for the chosen employee, with the matter as a list", () => {
+    const d = buildFromTemplate(CONCERN_LETTERS[1], SAMPLE_CONTEXT, { "Date of the conversation": "2026-10-28", "The reason the employee gave": "No reason given." });
+    expect(d.greeting).toBe("Dear Pat Example,");
+    expect(d.body).toContain("Further to our conversation on 28 October 2026 I am writing to inform you of my decision.");
+    expect(d.body).toContain("- Leaving duties you are expected to carry out");
+    expect(d.body).toContain("At the time, the reason you gave for your behavior was:\n\nNo reason given.");
+    expect(d.missing).toEqual([]);
+    const blocks = parseBlocks(d.body);
+    expect(blocks.some((b) => b.kind === "list" && b.items.length === 2)).toBe(true);
+  });
+
+  it("are added with the ready-made wording, none repeating another's name", () => {
+    const names = [...starterTemplates(), ...CONCERN_LETTERS].map((t) => t.name);
+    expect(new Set(names).size).toBe(names.length);
   });
 });

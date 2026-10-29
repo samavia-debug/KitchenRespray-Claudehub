@@ -1,5 +1,5 @@
 import { LETTER_TYPE_BY_KEY, LETTER_TYPES, type LetterTypeKey } from "./config";
-import type { LetterFacts } from "./facts";
+import { formatLongDate, type LetterFacts } from "./facts";
 import { DRAFT_LIMITS, defaultSalutation, unresolvedPlaceholders, type Draft } from "./prompt";
 import { fillStock, STOCK, type StockContext } from "./stock";
 
@@ -100,15 +100,64 @@ export function cleanTemplateInput(raw: unknown): { value: TemplateInput } | { e
   };
 }
 
+// ---- Fill-in boxes ----
+//
+// A template can ask for something that is different every time, such as the date of a conversation or what the employee said, by
+// putting [[a label]] where it goes. Writing a letter from the template shows one box for each label, and what is typed goes into the
+// text. A box left empty becomes a [CONFIRM: label] note, which stops the letter being finalised, like any other detail that is not known.
+
+export type TemplateField = { label: string; kind: "text" | "date" | "long" };
+
+const FIELD = /\[\[([^\[\]\n]{1,80})\]\]/g;
+const tidyLabel = (raw: string) => raw.trim().replace(/\s+/g, " ");
+
+/** A date for a label that says date, a larger box for an explanation, a line for anything else. */
+export function fieldKind(label: string): TemplateField["kind"] {
+  if (/\bdate\b|\bwhen\b/i.test(label)) return "date";
+  if (/reason|why|explanation|details|describe|what happened|notes?\b/i.test(label)) return "long";
+  return "text";
+}
+
+/** The fill-in boxes a template asks for, in the order they first appear, each label once. */
+export function templateFields(t: Pick<TemplateInput, "subject" | "greeting" | "body" | "closing">): TemplateField[] {
+  const seen = new Set<string>();
+  const out: TemplateField[] = [];
+  for (const text of [t.subject, t.greeting, t.body, t.closing]) {
+    text.replace(FIELD, (whole: string, raw: string) => {
+      const label = tidyLabel(raw);
+      if (label && !seen.has(label)) {
+        seen.add(label);
+        out.push({ label, kind: fieldKind(label) });
+      }
+      return whole;
+    });
+  }
+  return out;
+}
+
+/** Puts what was typed into each [[label]]; an empty box becomes a [CONFIRM: label] note. A date typed as 2026-10-28 is written out. */
+export function fillFields(text: string, values: Record<string, string> = {}): string {
+  return text.replace(FIELD, (_whole: string, raw: string) => {
+    const label = tidyLabel(raw);
+    const typed = (values[label] ?? "").replace(/\[\[|\]\]/g, "").replace(/\r\n/g, "\n").trim();
+    if (!typed) return `[CONFIRM: ${label}]`;
+    return fieldKind(label) === "date" ? formatLongDate(typed) : typed;
+  });
+}
+
 /** A letter from a template: its details filled in, anything not known marked [CONFIRM: ...] like every other letter. */
-export function buildFromTemplate(t: Pick<TemplateInput, "subject" | "greeting" | "body" | "closing" | "letter_type">, ctx: StockContext): Draft {
-  const subject = fillStock(t.subject, ctx);
-  const body = fillStock(t.body, ctx);
+export function buildFromTemplate(
+  t: Pick<TemplateInput, "subject" | "greeting" | "body" | "closing" | "letter_type">,
+  ctx: StockContext,
+  fields: Record<string, string> = {}
+): Draft {
+  const subject = fillStock(fillFields(t.subject, fields), ctx);
+  const body = fillStock(fillFields(t.body, fields), ctx);
 
   const toThem = LETTER_TYPE_BY_KEY[t.letter_type]?.recipient === "technician";
   const fallback = defaultSalutation(ctx.recipient.name || (toThem ? ctx.facts.name : undefined));
-  const greeting = t.greeting.trim() ? fillStock(t.greeting, ctx) : fallback.greeting;
-  const closing = t.closing.trim() ? fillStock(t.closing, ctx) : fallback.closing;
+  const greeting = t.greeting.trim() ? fillStock(fillFields(t.greeting, fields), ctx) : fallback.greeting;
+  const closing = t.closing.trim() ? fillStock(fillFields(t.closing, fields), ctx) : fallback.closing;
 
   const missing = new Set<string>(unresolvedPlaceholders(`${subject}\n\n${greeting}\n\n${body}\n\n${closing}`));
   if (!subject) missing.add("Add a subject line");

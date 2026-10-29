@@ -1,5 +1,6 @@
 import { createServiceClient } from "@/lib/supabase/service";
 import { logEvent, type SaveResult } from "./service";
+import { CONCERN_LETTERS } from "./concern-letters";
 import { starterTemplates, type LetterTemplate, type TemplateInput } from "./templates";
 
 const COLUMNS = "id, name, category, letter_type, subject, greeting, body, closing, created_at, updated_at";
@@ -46,7 +47,7 @@ export async function deleteTemplate(id: string, userId: string): Promise<SaveRe
 /** Adds the ready-made wording as templates; one whose name is already there is left alone, so it is safe to run twice. */
 export async function addStarterTemplates(userId: string): Promise<number> {
   const existing = new Set((await listTemplates()).map((t) => t.name));
-  const fresh = starterTemplates().filter((t) => !existing.has(t.name));
+  const fresh = [...starterTemplates(), ...CONCERN_LETTERS].filter((t) => !existing.has(t.name));
   if (fresh.length === 0) return 0;
   const { error } = await createServiceClient()
     .from("letter_templates")
