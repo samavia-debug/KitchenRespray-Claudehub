@@ -237,21 +237,36 @@ export async function fetchSchedulers(): Promise<ConnecteamScheduler[]> {
   return body.data?.schedulers ?? [];
 }
 
-/** Scheduled (rota) shifts starting between two unix times, 500 per page. */
+/** Connecteam refuses a shifts request that spans more than 92 days, so longer ranges are asked for in windows of 80. */
+export const SHIFT_WINDOW_SECONDS = 80 * 86_400;
+
+/** Splits a unix-time range into consecutive windows no longer than SHIFT_WINDOW_SECONDS. */
+export function shiftWindows(startTime: number, endTime: number): Array<[number, number]> {
+  const windows: Array<[number, number]> = [];
+  for (let from = startTime; from < endTime; from += SHIFT_WINDOW_SECONDS) {
+    windows.push([from, Math.min(from + SHIFT_WINDOW_SECONDS, endTime)]);
+  }
+  return windows.length > 0 ? windows : [[startTime, endTime]];
+}
+
+/** Scheduled (rota) shifts starting between two unix times, 500 per page, one window of up to 80 days at a time. */
 export async function fetchScheduledShifts(schedulerId: number, startTime: number, endTime: number): Promise<ScheduledShift[]> {
   const pageSize = 500;
-  const all: ScheduledShift[] = [];
-  let offset = 0;
+  const byId = new Map<string, ScheduledShift>();
 
-  for (let page = 0; page < MAX_PAGES; page++) {
-    const body = await connecteamGet<{ data?: { shifts?: ScheduledShift[] } }>(
-      `/scheduler/v1/schedulers/${schedulerId}/shifts?startTime=${startTime}&endTime=${endTime}&limit=${pageSize}&offset=${offset}`
-    );
-    const batch = body.data?.shifts ?? [];
-    all.push(...batch);
-    if (batch.length < pageSize) break;
-    offset += batch.length;
+  for (const [from, to] of shiftWindows(startTime, endTime)) {
+    let offset = 0;
+    for (let page = 0; page < MAX_PAGES; page++) {
+      const body = await connecteamGet<{ data?: { shifts?: ScheduledShift[] } }>(
+        `/scheduler/v1/schedulers/${schedulerId}/shifts?startTime=${from}&endTime=${to}&limit=${pageSize}&offset=${offset}`
+      );
+      const batch = body.data?.shifts ?? [];
+      // A shift that crosses a window edge can come back from both windows; keep one copy.
+      for (const shift of batch) byId.set(String(shift.id), shift);
+      if (batch.length < pageSize) break;
+      offset += batch.length;
+    }
   }
 
-  return all;
+  return Array.from(byId.values());
 }
