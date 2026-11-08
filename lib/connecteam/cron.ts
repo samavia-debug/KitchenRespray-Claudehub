@@ -4,10 +4,8 @@ import { getVehicleStatus, syncVehicleInspections } from "./vehicles-sync";
 import { getPpeStatus, syncPpeRequests } from "./ppe-sync";
 import { getScheduleStatus, getTimeClockStatus, getTimeOffStatus, syncSchedule, syncTimeClock, syncTimeOff } from "./time-sync";
 
-/** How long, in total, one Connecteam tick lets itself run. The scheduler gives up on a request after 30 seconds. */
-export const CONNECTEAM_TICK_BUDGET_MS = 24_000;
-/** A sync is only started when at least this much of the budget is left. */
-const MIN_STAGE_BUDGET_MS = 9_000;
+/** How long, in total, one Connecteam tick waits for its syncs. The scheduler gives up on a request after 30 seconds. */
+export const CONNECTEAM_TICK_BUDGET_MS = 25_000;
 
 export type StageKey = "connecteamSync" | "vehiclesSync" | "ppeSync" | "timeClockSync" | "scheduleSync" | "timeOffSync";
 export type StageResult = { synced?: number; error?: string; skipped?: string; ms?: number };
@@ -45,8 +43,12 @@ export function dueOrder(ages: { key: StageKey; staleHours: number; ageHours: nu
 }
 
 /**
- * Runs the Connecteam syncs that are due, within a fixed time budget. Each has its own try/catch, so
- * a Connecteam problem in one never stops the others. What does not fit is simply picked up on the next tick.
+ * Runs the Connecteam syncs that are due, all at the same time, and answers within a fixed time budget.
+ * They read different Connecteam endpoints and write different tables, so running them together means the
+ * tick takes as long as the slowest one (10 to 16 seconds) rather than the sum, which went past the
+ * scheduler's 30 seconds and got the job marked as failed. Each has its own try/catch, so a Connecteam
+ * problem in one never stops the others. A sync still running when the budget ends is reported as such;
+ * its results are simply picked up by the next tick.
  */
 export async function runConnecteamTick(startedAt = Date.now(), budgetMs = CONNECTEAM_TICK_BUDGET_MS): Promise<Record<StageKey, StageResult>> {
   const results = Object.fromEntries(STAGES.map((s) => [s.key, { skipped: "not connected" } as StageResult])) as Record<StageKey, StageResult>;
@@ -59,16 +61,14 @@ export async function runConnecteamTick(startedAt = Date.now(), budgetMs = CONNE
         const status = await s.status();
         const ageHours = status.lastSyncedAt ? (Date.now() - new Date(status.lastSyncedAt).getTime()) / 3_600_000 : Infinity;
         ages.push({ key: s.key, staleHours: s.staleHours, ageHours });
-        if (ageHours < s.staleHours) results[s.key] = { skipped: "fresh" };
-        else results[s.key] = { skipped: "out of time budget" };
+        results[s.key] = ageHours < s.staleHours ? { skipped: "fresh" } : { skipped: "still running after the time budget" };
       } catch (err: any) {
         results[s.key] = { error: err.message };
       }
     })
   );
 
-  for (const key of dueOrder(ages)) {
-    if (budgetMs - (Date.now() - startedAt) < MIN_STAGE_BUDGET_MS) break;
+  const work = dueOrder(ages).map(async (key) => {
     const stage = STAGES.find((s) => s.key === key)!;
     const t0 = Date.now();
     try {
@@ -76,6 +76,13 @@ export async function runConnecteamTick(startedAt = Date.now(), budgetMs = CONNE
     } catch (err: any) {
       results[key] = { error: err.message, ms: Date.now() - t0 };
     }
-  }
+  });
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<void>((resolve) => {
+    timer = setTimeout(resolve, Math.max(0, budgetMs - (Date.now() - startedAt)));
+  });
+  await Promise.race([Promise.all(work), deadline]);
+  clearTimeout(timer);
   return results;
 }

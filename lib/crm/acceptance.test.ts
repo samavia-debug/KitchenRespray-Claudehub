@@ -527,6 +527,8 @@ describe("12. The rest of the dashboard is untouched", () => {
       // Fleet: the van list with finance figures and tax, DOE and insurance due dates (the cron runs its warnings; the compliance service shares its notifier check).
       "app/dashboard/fleet/page.tsx", "app/dashboard/fleet/fleet-view.tsx", "app/api/fleet/route.ts", "app/api/fleet/[id]/route.ts", "app/api/fleet/import/route.ts",
       "lib/fleet/fleet.ts", "lib/fleet/import.ts", "lib/fleet/service.ts", "lib/fleet/fleet.test.ts", "app/api/monitoring/cron/route.ts", "lib/compliance/service.ts",
+      // Connecteam scheduled sync: rota shifts asked for in windows under Connecteam's 92-day limit, and the cron tick running its syncs together so it finishes inside the scheduler's 30 seconds.
+      "lib/connecteam/client.ts", "lib/connecteam/client.test.ts", "lib/connecteam/cron.ts", "lib/connecteam/cron.test.ts", "app/api/connecteam/cron/route.ts",
     ];
     expect(out.filter((f) => ![".gitignore", "app/dashboard/layout.tsx", "app/dashboard/sidebar-nav.tsx", "app/globals.css", "lib/letters/prompt.ts", ...later].includes(f))).toEqual([]);
   });

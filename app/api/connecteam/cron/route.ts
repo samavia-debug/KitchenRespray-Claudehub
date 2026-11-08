@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { isCronAuthorized } from "@/lib/auth/cron";
 import { runConnecteamTick } from "@/lib/connecteam/cron";
 
-// The scheduler (cron-job.org) stops waiting after 30 seconds, so the tick keeps itself to about 24 (see
+// The scheduler (cron-job.org) stops waiting after 30 seconds, so the tick answers within about 25 (see
 // CONNECTEAM_TICK_BUDGET_MS). This is only the hard ceiling if one Connecteam call hangs.
 export const maxDuration = 60;
 
