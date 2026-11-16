@@ -2,12 +2,13 @@ import { isConnecteamConfigured } from "./client";
 import { getConnecteamStatus, syncConnecteamStaff } from "./sync";
 import { getVehicleStatus, syncVehicleInspections } from "./vehicles-sync";
 import { getPpeStatus, syncPpeRequests } from "./ppe-sync";
+import { getVanDocsStatus, syncVanDocuments } from "../fleet/connecteam-sync";
 import { getScheduleStatus, getTimeClockStatus, getTimeOffStatus, syncSchedule, syncTimeClock, syncTimeOff } from "./time-sync";
 
 /** How long, in total, one Connecteam tick waits for its syncs. The scheduler gives up on a request after 30 seconds. */
 export const CONNECTEAM_TICK_BUDGET_MS = 25_000;
 
-export type StageKey = "connecteamSync" | "vehiclesSync" | "ppeSync" | "timeClockSync" | "scheduleSync" | "timeOffSync";
+export type StageKey = "connecteamSync" | "vehiclesSync" | "ppeSync" | "timeClockSync" | "scheduleSync" | "timeOffSync" | "vanDocsSync";
 export type StageResult = { synced?: number; error?: string; skipped?: string; ms?: number };
 
 type Stage = {
@@ -26,6 +27,7 @@ const STAGES: Stage[] = [
   { key: "timeOffSync", staleHours: 3, status: getTimeOffStatus, run: async () => (await syncTimeOff()).requests },
   { key: "vehiclesSync", staleHours: 3, status: getVehicleStatus, run: async () => (await syncVehicleInspections()).total },
   { key: "ppeSync", staleHours: 3, status: getPpeStatus, run: async () => (await syncPpeRequests()).total },
+  { key: "vanDocsSync", staleHours: 3, status: getVanDocsStatus, run: async () => (await syncVanDocuments()).linked },
   { key: "connecteamSync", staleHours: 20, status: getConnecteamStatus, run: async () => (await syncConnecteamStaff()).total },
 ];
 

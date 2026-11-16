@@ -32,6 +32,11 @@ export type Van = {
   tax_alerted_stage: number;
   doe_alerted_stage: number;
   insurance_alerted_stage: number;
+  /** The person in Connecteam whose "Van tax", "Van DOE" and "Van insurance" documents hold this van's dates. */
+  connecteam_user_id: number | null;
+  tax_from_connecteam: boolean;
+  doe_from_connecteam: boolean;
+  insurance_from_connecteam: boolean;
   status: VanStatus;
   notes: string | null;
   updated_at: string;
@@ -51,6 +56,7 @@ export type VanInput = {
   tax_due: string | null;
   doe_due: string | null;
   insurance_due: string | null;
+  connecteam_user_id: number | null;
   status: VanStatus;
   notes: string | null;
 };
@@ -163,6 +169,7 @@ export function cleanVanInput(raw: unknown): { value: VanInput } | { error: stri
       tax_due: due("tax"),
       doe_due: due("doe"),
       insurance_due: due("insurance"),
+      connecteam_user_id: Number.isInteger(b.connecteam_user_id) && (b.connecteam_user_id as number) > 0 ? (b.connecteam_user_id as number) : null,
       status: b.status === "gone" ? "gone" : "active",
       notes: typeof b.notes === "string" ? b.notes.replace(/\r\n/g, "\n").trim().slice(0, 1000) || null : null,
     },

@@ -12,13 +12,13 @@ const longDate = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateStrin
 
 const BLANK: VanInput = {
   reg: "", model: null, driver: null, lender: null, agreement: null, value_eur: null, monthly_eur: null, settlement_eur: null,
-  weight_kg: null, tax_pin: null, tax_due: null, doe_due: null, insurance_due: null, status: "active", notes: null,
+  weight_kg: null, tax_pin: null, tax_due: null, doe_due: null, insurance_due: null, connecteam_user_id: null, status: "active", notes: null,
 };
 
 const toInput = (v: Van): VanInput => ({
   reg: v.reg, model: v.model, driver: v.driver, lender: v.lender, agreement: v.agreement, value_eur: v.value_eur, monthly_eur: v.monthly_eur,
   settlement_eur: v.settlement_eur, weight_kg: v.weight_kg, tax_pin: v.tax_pin, tax_due: v.tax_due, doe_due: v.doe_due,
-  insurance_due: v.insurance_due, status: v.status, notes: v.notes,
+  insurance_due: v.insurance_due, connecteam_user_id: v.connecteam_user_id, status: v.status, notes: v.notes,
 });
 
 type ImportPreview = { sheets: string[]; sheetIndex: number; vans: number; added: number; updated: number; regsInHubNotInFile: number; monthOnly: number; warnings: string[] };
@@ -30,6 +30,11 @@ function DueCell({ van, kind, today }: { van: Van; kind: DueKind; today: string 
     <span style={{ color: LEVEL_COLOR[item.level], fontWeight: item.level === "ok" || item.level === "watch" ? 400 : 600 }} title={item.text}>
       {longDate(item.date)}
       <div style={{ fontSize: "0.72rem" }}>{item.text}</div>
+      {van[`${kind}_from_connecteam` as const] && (
+        <div style={{ fontSize: "0.68rem", color: "var(--muted)", fontWeight: 400 }} title="This date was read from the Documents tab in Connecteam. Check it is right.">
+          from Connecteam
+        </div>
+      )}
     </span>
   );
 }
@@ -48,6 +53,8 @@ export default function FleetView() {
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [importing, setImporting] = useState(false);
+  const [people, setPeople] = useState<{ id: number; name: string }[]>([]);
+  const [syncingDates, setSyncingDates] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -58,6 +65,7 @@ export default function FleetView() {
         setError(null);
         setVans(body.vans);
         setToday(body.today);
+        setPeople(Array.isArray(body.people) ? body.people : []);
       }
     } catch (e: any) {
       setError(e.message || "Network error");
@@ -97,6 +105,29 @@ export default function FleetView() {
     value: form[key] ?? "",
     onChange: (e: React.ChangeEvent<HTMLInputElement>) => change(key, e.target.value === "" ? null : Number(e.target.value)),
   });
+
+  async function syncDates() {
+    setSyncingDates(true);
+    setError(null);
+    setMessage(null);
+    try {
+      const res = await fetch("/api/fleet/sync-dates", { method: "POST" });
+      const body = await res.json();
+      if (!res.ok) setError(body.error || "Could not read the dates from Connecteam");
+      else {
+        const parts = [`${body.datesUpdated} ${body.datesUpdated === 1 ? "date" : "dates"} updated for ${body.linked} ${body.linked === 1 ? "van" : "vans"} linked to Connecteam`];
+        if (body.newlyLinked > 0) parts.push(`${body.newlyLinked} newly linked by driver name`);
+        if (body.needPicking > 0) parts.push(`${body.needPicking} with a driver the Hub could not match: open the van and pick the Connecteam person`);
+        if (body.noDatesInConnecteam?.length) parts.push(`no ${body.noDatesInConnecteam.join(" or ")} dates in Connecteam yet (set an expiry on that document there)`);
+        if (body.missingDocuments?.length) parts.push(`no document found in Connecteam for ${body.missingDocuments.join(" or ")}`);
+        setMessage(`${parts.join("; ")}.`);
+        await load();
+      }
+    } catch (e: any) {
+      setError(e.message || "Network error");
+    }
+    setSyncingDates(false);
+  }
 
   async function save() {
     setBusy(true);
@@ -309,6 +340,18 @@ export default function FleetView() {
                   <input {...text("driver")} />
                 </div>
                 <div className="field" style={{ margin: 0 }}>
+                  <label>Connecteam person (tax, DOE and insurance dates)</label>
+                  <select value={form.connecteam_user_id ?? ""} onChange={(e) => change("connecteam_user_id", e.target.value ? Number(e.target.value) : null)}>
+                    <option value="">Not linked</option>
+                    {form.connecteam_user_id !== null && !people.some((p) => p.id === form.connecteam_user_id) && <option value={form.connecteam_user_id}>Person {form.connecteam_user_id}</option>}
+                    {people.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="field" style={{ margin: 0 }}>
                   <label>Lender</label>
                   <input {...text("lender")} />
                 </div>
@@ -379,6 +422,9 @@ export default function FleetView() {
                 <option value="gone">Gone</option>
                 <option value="all">All</option>
               </select>
+              <button className="btn btn-secondary" onClick={syncDates} disabled={syncingDates} title="Read the Van tax, Van DOE and Van insurance dates from the Documents tab in Connecteam">
+                {syncingDates ? "Reading Connecteam..." : "Update dates from Connecteam"}
+              </button>
               <button
                 className="btn"
                 onClick={() => {

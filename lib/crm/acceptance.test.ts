@@ -529,6 +529,8 @@ describe("12. The rest of the dashboard is untouched", () => {
       "lib/fleet/fleet.ts", "lib/fleet/import.ts", "lib/fleet/service.ts", "lib/fleet/fleet.test.ts", "app/api/monitoring/cron/route.ts", "lib/compliance/service.ts",
       // Connecteam scheduled sync: rota shifts asked for in windows under Connecteam's 92-day limit, and the cron tick running its syncs together so it finishes inside the scheduler's 30 seconds.
       "lib/connecteam/client.ts", "lib/connecteam/client.test.ts", "lib/connecteam/cron.ts", "lib/connecteam/cron.test.ts", "app/api/connecteam/cron/route.ts",
+      // Fleet reads tax, DOE and insurance dates from the Documents tab in Connecteam.
+      "lib/fleet/connecteam-sync.ts", "lib/fleet/connecteam-sync.test.ts", "lib/fleet/connecteam-match.ts", "lib/fleet/connecteam-match.test.ts", "app/api/fleet/sync-dates/route.ts",
     ];
     expect(out.filter((f) => ![".gitignore", "app/dashboard/layout.tsx", "app/dashboard/sidebar-nav.tsx", "app/globals.css", "lib/letters/prompt.ts", ...later].includes(f))).toEqual([]);
   });

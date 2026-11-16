@@ -6,7 +6,7 @@ import { DUE_KINDS, alertedField, dueField, fleetAlertMessage, pendingFleetAlert
 import type { ImportedVan } from "./import";
 
 const COLUMNS =
-  "id, reg, reg_key, model, driver, lender, agreement, value_eur, monthly_eur, settlement_eur, weight_kg, tax_pin, tax_due, doe_due, insurance_due, tax_alerted_stage, doe_alerted_stage, insurance_alerted_stage, status, notes, updated_at";
+  "id, reg, reg_key, model, driver, lender, agreement, value_eur, monthly_eur, settlement_eur, weight_kg, tax_pin, tax_due, doe_due, insurance_due, tax_alerted_stage, doe_alerted_stage, insurance_alerted_stage, connecteam_user_id, tax_from_connecteam, doe_from_connecteam, insurance_from_connecteam, status, notes, updated_at";
 
 export const todayKey = () => dublinDateKey(Date.now());
 
@@ -14,7 +14,7 @@ export type Result = { ok: true } | { ok: false; error: string; status: number }
 
 const num = (v: unknown) => (v === null || v === undefined ? null : Number(v));
 /** Amounts come back from the database as text; the page works in numbers. */
-const asVan = (r: any): Van => ({ ...r, value_eur: num(r.value_eur), monthly_eur: num(r.monthly_eur), settlement_eur: num(r.settlement_eur) });
+const asVan = (r: any): Van => ({ ...r, value_eur: num(r.value_eur), monthly_eur: num(r.monthly_eur), settlement_eur: num(r.settlement_eur), connecteam_user_id: num(r.connecteam_user_id) });
 
 export async function listVans(): Promise<Van[]> {
   const { data, error } = await createServiceClient().from("fleet_vans").select(COLUMNS).order("status").order("reg").limit(1000);

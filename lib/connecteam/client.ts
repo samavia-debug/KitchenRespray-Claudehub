@@ -270,3 +270,36 @@ export async function fetchScheduledShifts(schedulerId: number, startTime: numbe
 
   return Array.from(byId.values());
 }
+
+export type ConnecteamDocument = { documentId: number; name: string; documentType?: string; expiration?: { type: "document" | "entry"; frequency?: string; nextExpiresAt?: number } };
+export type ConnecteamUserDocument = { userId: number; documentId: number; documentType?: string; status?: string; uploadedAt?: number; signedAt?: number; expiresAt?: number };
+
+/** Every document set up in Connecteam's Documents tab (the templates, not who has them). The Documents API is in beta. */
+export async function fetchDocumentCatalog(): Promise<ConnecteamDocument[]> {
+  const all: ConnecteamDocument[] = [];
+  let offset = 0;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const body = await connecteamGet<{ data?: { documents?: ConnecteamDocument[] }; paging?: { total?: number } }>(`/documents/v1/documents?limit=200&offset=${offset}`);
+    const batch = body.data?.documents ?? [];
+    all.push(...batch);
+    offset += batch.length;
+    if (batch.length === 0 || offset >= (body.paging?.total ?? 0)) break;
+  }
+  return all;
+}
+
+/** One row per person per assigned document: status, when the latest file went in and when it expires. */
+export async function fetchUserDocuments(documentIds: number[]): Promise<ConnecteamUserDocument[]> {
+  if (documentIds.length === 0) return [];
+  const ids = documentIds.slice(0, 100).map((id) => `documentIds=${encodeURIComponent(String(id))}`).join("&");
+  const all: ConnecteamUserDocument[] = [];
+  let offset = 0;
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const body = await connecteamGet<{ data?: { documents?: ConnecteamUserDocument[] }; paging?: { total?: number } }>(`/documents/v1/user-documents?${ids}&limit=200&offset=${offset}`);
+    const batch = body.data?.documents ?? [];
+    all.push(...batch);
+    offset += batch.length;
+    if (batch.length === 0 || offset >= (body.paging?.total ?? 0)) break;
+  }
+  return all;
+}

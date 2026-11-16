@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireRole } from "@/lib/auth/session";
 import { cleanVanInput } from "@/lib/fleet/fleet";
 import { createVan, listVans, todayKey } from "@/lib/fleet/service";
+import { listConnecteamPeople } from "@/lib/fleet/connecteam-sync";
 
 // The van list holds finance figures (what is owed to lenders, monthly payments): Admin only.
 export async function GET() {
@@ -9,7 +10,9 @@ export async function GET() {
   if ("error" in auth) return auth.error;
 
   try {
-    return NextResponse.json({ vans: await listVans(), today: todayKey() });
+    // The people list only feeds the Connecteam person choice, so a problem reading it never stops the van list loading.
+    const [vans, people] = await Promise.all([listVans(), listConnecteamPeople().catch(() => [])]);
+    return NextResponse.json({ vans, today: todayKey(), people });
   } catch (err: any) {
     return NextResponse.json({ error: err.message || "Could not load the vans" }, { status: 500 });
   }

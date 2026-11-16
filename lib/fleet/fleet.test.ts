@@ -21,7 +21,8 @@ const TODAY = "2026-08-26";
 const van = (over: Partial<Van> = {}): Van => ({
   id: "1", reg: "191 D 30807", reg_key: "191D30807", model: "Opel Vivaro", driver: "Mike", lender: "AIB", agreement: null,
   value_eur: 15000, monthly_eur: 400, settlement_eur: 0, weight_kg: null, tax_pin: null, tax_due: null, doe_due: null, insurance_due: null,
-  tax_alerted_stage: 0, doe_alerted_stage: 0, insurance_alerted_stage: 0, status: "active", notes: null, updated_at: "2026-08-01T00:00:00Z", ...over,
+  tax_alerted_stage: 0, doe_alerted_stage: 0, insurance_alerted_stage: 0, connecteam_user_id: null, tax_from_connecteam: false, doe_from_connecteam: false,
+  insurance_from_connecteam: false, status: "active", notes: null, updated_at: "2026-08-01T00:00:00Z", ...over,
 });
 
 describe("reading values from a spreadsheet", () => {

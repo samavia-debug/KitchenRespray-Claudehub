@@ -7,6 +7,7 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 vi.mock("./client", () => ({ isConnecteamConfigured: () => true }));
 vi.mock("./sync", () => ({ getConnecteamStatus: async () => ({ lastSyncedAt: hoursAgo(1) }), syncConnecteamStaff: async () => ({ total: 1 }) }));
 vi.mock("./vehicles-sync", () => ({ getVehicleStatus: async () => ({ lastSyncedAt: hoursAgo(1) }), syncVehicleInspections: async () => ({ total: 1 }) }));
+vi.mock("../fleet/connecteam-sync", () => ({ getVanDocsStatus: async () => ({ lastSyncedAt: hoursAgo(1) }), syncVanDocuments: async () => ({ linked: 1 }) }));
 vi.mock("./ppe-sync", () => ({ getPpeStatus: async () => ({ lastSyncedAt: hoursAgo(1) }), syncPpeRequests: async () => ({ total: 1 }) }));
 const timeSync = vi.hoisted(() => ({ clock: vi.fn(), schedule: vi.fn() }));
 vi.mock("./time-sync", () => ({
